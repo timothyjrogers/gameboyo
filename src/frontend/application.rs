@@ -14,15 +14,15 @@ use crate::emulator::emulator;
 //ICED STATE
 pub struct Gameboyo {
     current_view: PageModel,
-    emulator: Option<Emulator>,
+    emulator: Option<emulator::Emulator>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     IcedEvent(iced_native::Event),
     Goto(PageModel),
+    LaunchEmulator,
     ChooseRom,
-    CpuClockTick,
 }
 
 #[derive(Debug, Clone)]
@@ -73,7 +73,12 @@ impl Application for Gameboyo {
                     _ => println!("User canceled")
                 }
                 self.emulator = Some(emulator::Emulator::new(path));
+                match &self.emulator {
+                    Some(x) => x.validate_logo(),
+                    _ => false
+                };
             },
+            Message::LaunchEmulator => (),
             Message::Goto(p) => {
                 self.current_view = p;
             },
@@ -98,13 +103,6 @@ impl Application for Gameboyo {
 
     fn subscription(&self) -> Subscription<Self::Message> {
         let runtime_events = iced_native::subscription::events().map(Message::IcedEvent);
-
-        /*
-
-        let ticks = time::every(Duration::from_millis(
-            1000 / constants::CLOCK_SPEED_HZ as u64,
-        )).map(|_| -> Message { Message::CpuClockTick });
-        */
 
         Subscription::batch(vec![runtime_events])
     }

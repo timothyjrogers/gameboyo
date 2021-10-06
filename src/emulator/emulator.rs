@@ -1,8 +1,9 @@
 use crate::emulator::constants;
+use crate::emulator::memory;
 
 pub struct Emulator {
     registers: Registers,
-    memory: Memory,
+    memory: memory::Memory,
 }
 
 struct Registers {
@@ -12,25 +13,6 @@ struct Registers {
     HL: u16,
     SP: u16,
     PC: u16,
-}
-
-enum Flag {
-    Zero,
-    Subtraction,
-    HalfCarry,
-    Carry,
-}
-
-impl Emulator {
-    pub fn new(path: String) -> Self {
-        let rom_data = std::fs::read(rom_path).unwrap();
-        let mut cartridge_type = rom_data[constants::CARTRIDGE_TYPE];
-        let mut rom_size = rom_data[constants::ROM_SIZE];
-        let mut ram_size = rom_data[constants::RAM_SIZE];
-    }
-
-    //TODO
-    //pub fn validate_logo(self) -> Bool
 }
 
 impl Registers {
@@ -64,5 +46,33 @@ impl Registers {
             }
             self.AF = self.AF & mask;
         }
+    }
+}
+
+enum Flag {
+    Zero,
+    Subtraction,
+    HalfCarry,
+    Carry,
+}
+
+impl Emulator {
+    pub fn new(path: String) -> Self {
+        let memory = memory::Memory::new(path);
+        Self {
+            registers: Registers::new(),
+            memory: memory,
+        }
+    }
+
+    pub fn validate_logo(&self) -> bool {
+        let mut valid = true;
+        for i in constants::LOGO_START..=constants::LOGO_END {
+            if self.memory.read(i as u16) != constants::NINTENDO_LOGO[i - constants::LOGO_START] {
+                valid = false;
+            }
+        }
+        println!("Logo validation = {}", valid);
+        return valid;
     }
 }

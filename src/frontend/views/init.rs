@@ -13,6 +13,7 @@ pub fn draw<'a>(rom_button: &'a mut button::State, start_button: &'a mut button:
                 )
                 .push(
                     Button::new(start_button, Text::new(String::from("Launch")))
+                        .on_press(Message::LaunchEmulator)
                 )
         );
     Container::new(content)
