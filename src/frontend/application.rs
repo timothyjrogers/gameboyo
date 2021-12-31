@@ -23,6 +23,7 @@ pub enum Message {
     Goto(PageModel),
     LaunchEmulator,
     ChooseRom,
+    RedrawScreen,
 }
 
 #[derive(Debug, Clone)]
