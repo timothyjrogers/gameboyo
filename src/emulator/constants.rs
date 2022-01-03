@@ -70,3 +70,19 @@ pub const IE_REGISTER: usize = 0xFFFF;
 pub const FOUR_KB: usize = 4096;
 pub const EIGHT_KB: usize = 8192;
 pub const SIXTEEN_KB: usize = 16384;
+
+//Initial Register Values
+pub const DMG_AF: u16 = 0x01B0;
+pub const DMG_BC: u16 = 0x0013;
+pub const DMG_DE: u16 = 0x00D8;
+pub const DMG_HL: u16 = 0x014D;
+pub const DMG_SP: u16 = 0xFFFE;
+pub const DMG_PC: u16 = 0x0100;
+pub const DMG_DIV: u16 = 0xABCC;
+pub const GBC_AF: u16 = 0x1180;
+pub const GBC_BC: u16 = 0x0000;
+pub const GBC_DE: u16 = 0xFF56;
+pub const GBC_HL: u16 = 0x000D;
+pub const GBC_SP: u16 = 0xFFFE;
+pub const GBC_PC: u16 = 0x0100;
+pub const GBC_DIV: u16 = 0x1EA0;
