@@ -1,10 +1,14 @@
 use crate::emulator::constants;
-use crate::emulator::memory;
+use crate::emulator::memory::memory::Memory;
 use crate::emulator::registers::register::{Register, Registers};
 
 pub struct Emulator {
+    memory: :Memory,
     registers: Registers,
-    memory: memory::Memory,
+    //TODO cpu: CPU,
+    //TODO timer: Timer,
+    //TODO video: VideoController,
+    //TODO joypad: Joypad,
 }
 
 pub enum Platform {

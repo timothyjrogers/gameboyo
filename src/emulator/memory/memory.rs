@@ -1,5 +1,5 @@
 use crate::emulator::constants;
-use crate::emulator::mbc::*;
+use crate::emulator::memory::mbc::*;
 use crate::emulator::constants::{FOUR_KB, ONBOARD_ROM_END};
 
 pub struct Memory {
