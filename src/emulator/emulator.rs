@@ -1,14 +1,16 @@
 use crate::emulator::constants;
 use crate::emulator::memory::memory::Memory;
-use crate::emulator::registers::register::{Register, Registers};
+use crate::emulator::cpu::cpu::CPU;
+use crate::emulator::timer::timer::Timer;
+use crate::emulator::joypad::joypad::Joypad;
+use crate::emulator::video::video::VideoController;
 
 pub struct Emulator {
-    memory: :Memory,
-    registers: Registers,
-    //TODO cpu: CPU,
-    //TODO timer: Timer,
-    //TODO video: VideoController,
-    //TODO joypad: Joypad,
+    memory: Memory,
+    cpu: CPU,
+    timer: Timer,
+    joypad: Joypad,
+    video: VideoController,
 }
 
 pub enum Platform {
@@ -18,13 +20,35 @@ pub enum Platform {
 
 impl Emulator {
     pub fn new(path: String) -> Self {
-        let memory = memory::Memory::new(path);
+        let platform: Platform;
+        if path.ends_with(".gb") {
+            platform = Platform::DMG;
+        } else if path.ends_with((".gbc")) {
+            platform = Platform::GBC;
+        } else {
+            panic!("Unrecognized file type, please provide .gb or .gbc file");
+        }
+        let memory = Memory::new(path);
+        let cpu = CPU::new(&platform);
+        let timer = Timer::new(&platform);
+        let joypad = Joypad::new();
+        let video = VideoController::new();
         Self {
-            registers: Registers::new(),
-            memory: memory,
+            memory,
+            cpu,
+            timer,
+            joypad,
+            video,
         }
     }
 
+    /*
+        CPU needs reference to Memory, Timer, Video Controller to read/write values
+     */
+    pub fn tick() {
+    }
+
+    /*
     pub fn validate_logo(&self) -> bool {
         let mut valid = true;
         for i in constants::LOGO_START..=constants::LOGO_END {
@@ -35,4 +59,5 @@ impl Emulator {
         println!("Logo validation = {}", valid);
         return valid;
     }
+     */
 }

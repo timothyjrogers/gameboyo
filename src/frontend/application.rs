@@ -75,7 +75,7 @@ impl Application for Gameboyo {
                 }
                 self.emulator = Some(emulator::Emulator::new(path));
                 match &self.emulator {
-                    Some(x) => x.validate_logo(),
+                    Some(x) => true, //x.validate_logo(),
                     _ => false
                 };
             },

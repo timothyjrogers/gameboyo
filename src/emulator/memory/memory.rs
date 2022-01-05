@@ -3,6 +3,7 @@ use crate::emulator::memory::mbc::*;
 use crate::emulator::constants::{FOUR_KB, ONBOARD_ROM_END};
 
 pub struct Memory {
+    header: [u8; 0x50],
     onboard_rom: [u8; constants::SIXTEEN_KB],
     memory_bank_controller: Box<MemoryBankController>,
     vram: [[u8; constants::EIGHT_KB]; 2],
@@ -26,6 +27,7 @@ impl Memory {
             _ => panic!("Unsupported cartridge type")
         };
         let mut mem = Self {
+            header: [0; 0x50],
             onboard_rom: [0; constants::ROM_BANK_SIZE],
             memory_bank_controller: mbc,
             vram: [[0; constants::EIGHT_KB]; 2],
@@ -38,15 +40,10 @@ impl Memory {
             hram: [0; 0x8E],
             ie_reg: 0,
         };
-        for i in constants::ONBOARD_ROM_START..=ONBOARD_ROM_END {
-            mem.onboard_rom[i] = rom_data[i];
-        }
+        for i in 0x0100..0x0150 { mem.header[i - 0x0100] = rom_data[i] }
+        for i in constants::ONBOARD_ROM_START..=ONBOARD_ROM_END { mem.onboard_rom[i] = rom_data[i] }
         //TODO -- currently only supports MBC0
-        for i in constants::SWITCHABLE_ROM_START..=constants::SWITCHABLE_ROM_END {
-            mem.memory_bank_controller.write(i as u16, rom_data[i]);
-        }
-        //TODO -- debug only
-        //mem.dump_rom();
+        for i in constants::SWITCHABLE_ROM_START..=constants::SWITCHABLE_ROM_END { mem.memory_bank_controller.write(i as u16, rom_data[i]) }
         return mem;
     }
 
