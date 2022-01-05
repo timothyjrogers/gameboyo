@@ -46,6 +46,9 @@ impl Emulator {
         CPU needs reference to Memory, Timer, Video Controller to read/write values
      */
     pub fn tick() {
+        //tick timer
+        //check interrupts, process if necessary
+        //fetch instruction
     }
 
     /*
