@@ -40,7 +40,7 @@ impl Register {
     }
 }
 
-pub enum Interrupts {
+pub enum Interrupt {
     VerticalBlanking,
     LcdStat,
     Timer,
@@ -57,9 +57,42 @@ impl InterruptEnable {
         Self { bits: 0 }
     }
 
-    
-}
+    pub fn enabled(&self, interrupt: Interrupt) -> bool {
+        let mut mask;
+        match interrupt {
+            Interrupt::VerticalBlanking => mask = 0b00000001,
+            Interrupt::LcdStat => mask = 0b00000010,
+            Interrupt::Timer => mask = 0b00000100,
+            Interrupt::Serial => mask = 0b00001000,
+            Interrupt::Joypad => mask = 0b00010000,
+        }
+        return (self.bits & mask) > 0;
+    }
 
+    pub fn enable(&mut self, interrupt: Interrupt) {
+        let mut mask;
+        match interrupt {
+            Interrupt::VerticalBlanking => mask = 0b00000001,
+            Interrupt::LcdStat => mask = 0b00000010,
+            Interrupt::Timer => mask = 0b00000100,
+            Interrupt::Serial => mask = 0b00001000,
+            Interrupt::Joypad => mask = 0b00010000,
+        }
+        self.bits = self.bits | mask;
+    }
+
+    pub fn disable(&mut self, interrupt: Interrupt) {
+        let mut mask;
+        match interrupt {
+            Interrupt::VerticalBlanking => mask = 0b11111110,
+            Interrupt::LcdStat => mask = 0b11111101,
+            Interrupt::Timer => mask = 0b11111011,
+            Interrupt::Serial => mask = 0b11110111,
+            Interrupt::Joypad => mask = 0b11101111,
+        }
+        self.bits = self.bits & mask;
+    }
+}
 
 /*
 
@@ -73,28 +106,39 @@ impl InterruptFlags {
         Self { bits: 0b11100000 }
     }
 
-    pub fn set(&mut self, bit: u8) {
-        if bit > 4 { return }
-        let mask: u8 = 0b00000001;
-        self.bits = self.bits | (mask << bit);
+    pub fn enabled(&self, interrupt: Interrupt) -> bool {
+        let mut mask;
+        match interrupt {
+            Interrupt::VerticalBlanking => mask = 0b00000001,
+            Interrupt::LcdStat => mask = 0b00000010,
+            Interrupt::Timer => mask = 0b00000100,
+            Interrupt::Serial => mask = 0b00001000,
+            Interrupt::Joypad => mask = 0b00010000,
+        }
+        return (self.bits & mask) > 0;
     }
 
-    pub fn reset(&mut self, bit: u8) {
-        if bit > 4 { return }
-        let mask: u8 = 0b11111110;
-        self.bits = self.bits & mask.rotate_left(bit.into());
+    pub fn enable(&mut self, interrupt: Interrupt) {
+        let mut mask;
+        match interrupt {
+            Interrupt::VerticalBlanking => mask = 0b00000001,
+            Interrupt::LcdStat => mask = 0b00000010,
+            Interrupt::Timer => mask = 0b00000100,
+            Interrupt::Serial => mask = 0b00001000,
+            Interrupt::Joypad => mask = 0b00010000,
+        }
+        self.bits = self.bits | mask;
     }
 
-    pub fn read(&self) -> u8 {
-        self.bits
-    }
-
-    pub fn read_bit(&self, bit: u8) -> u8 {
-        if bit > 4 { return 1 }
-        return self.bits & (0b00000001 << bit) >> bit;
-    }
-
-    pub fn interrupt_set(&self) -> bool {
-        return self.bits > 0;
+    pub fn disable(&mut self, interrupt: Interrupt) {
+        let mut mask;
+        match interrupt {
+            Interrupt::VerticalBlanking => mask = 0b11111110,
+            Interrupt::LcdStat => mask = 0b11111101,
+            Interrupt::Timer => mask = 0b11111011,
+            Interrupt::Serial => mask = 0b11110111,
+            Interrupt::Joypad => mask = 0b11101111,
+        }
+        self.bits = self.bits & mask;
     }
 }

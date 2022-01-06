@@ -45,8 +45,8 @@ impl Emulator {
     /*
         CPU needs reference to Memory, Timer, Video Controller to read/write values
      */
-    pub fn tick() {
-        //tick timer
+    pub fn tick(&mut self) {
+        self.timer.tick();
         //check interrupts, process if necessary
         //fetch instruction
     }

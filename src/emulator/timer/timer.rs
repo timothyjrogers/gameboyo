@@ -53,6 +53,10 @@ impl Timer {
         false
     }
 
+    pub fn set_tima(&mut self) {
+        self.tima = self.tma;
+    }
+
     pub fn write_counter(&mut self) {
         self.counter = 0;
     }
