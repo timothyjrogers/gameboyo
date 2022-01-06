@@ -15,6 +15,8 @@ pub struct Memory {
     io_reg: [u8; 0x7F],
     hram: [u8; 0x8E],
     ie_reg: u8,
+    vram_lock: bool,
+    oam_lock: bool,
 }
 
 impl Memory {
@@ -39,6 +41,8 @@ impl Memory {
             io_reg: [0; 0x7F],
             hram: [0; 0x8E],
             ie_reg: 0,
+            vram_lock: false,
+            oam_lock: false,
         };
         for i in 0x0100..0x0150 { mem.header[i - 0x0100] = rom_data[i] }
         for i in constants::ONBOARD_ROM_START..=ONBOARD_ROM_END { mem.onboard_rom[i] = rom_data[i] }
@@ -82,6 +86,22 @@ impl Memory {
             constants::IE_REGISTER => self.ie_reg = data,
             _ => panic!("Unreachable address")
         };
+    }
+
+    pub fn lock_vram(&mut self) {
+        self.vram_lock = true;
+    }
+
+    pub fn unlock_vram(&mut self) {
+        self.vram_lock = false;
+    }
+
+    pub fn lock_oam(&mut self) {
+        self.oam_lock = true;
+    }
+
+    pub fn unlock_oam(&mut self) {
+        self.oam_lock = false;
     }
 
     fn dump_rom(&self) {
