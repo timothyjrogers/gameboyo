@@ -4,6 +4,7 @@ use crate::emulator::cpu::cpu::CPU;
 use crate::emulator::timer::timer::Timer;
 use crate::emulator::joypad::joypad::Joypad;
 use crate::emulator::video::video::VideoController;
+use crate::emulator::cpu::registers::Interrupt;
 
 pub struct Emulator {
     memory: Memory,
@@ -52,12 +53,20 @@ impl Emulator {
         CPU needs reference to Memory, Timer, Video Controller to read/write values
      */
     pub fn tick(&mut self) {
-        if self.timer.tick() { self.timer_state = TimerState::Steady }
         match self.timer_state {
-            TimerState::InterruptReady => {}
+            TimerState::InterruptReady => {
+                self.cpu.enable_interrupt(Interrupt::Timer);
+                self.timer.set_tima();
+                self.timer_state = TimerState::Steady;
+            },
+            _ => ()
         }
+        if self.timer.tick() { self.timer_state = TimerState::InterruptReady }
 
         //check interrupts, process if necessary
+        if self.cpu.interrupt_ready() {
+            self.cpu.setup_interrupts(&mut self.memory);
+        }
         //fetch instruction
     }
 

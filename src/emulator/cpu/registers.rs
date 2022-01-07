@@ -141,4 +141,8 @@ impl InterruptFlags {
         }
         self.bits = self.bits & mask;
     }
+
+    pub fn enabled_any(&self) -> bool {
+        return self.bits & 0b00011111 > 0;
+    }
 }

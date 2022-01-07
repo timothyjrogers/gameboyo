@@ -1,6 +1,7 @@
-use crate::emulator::cpu::registers::{InterruptFlags, InterruptEnable, Register};
+use crate::emulator::cpu::registers::{Interrupt, InterruptFlags, InterruptEnable, Register};
 use crate::emulator::constants;
 use crate::emulator::emulator::Platform;
+use crate::emulator::memory::memory::Memory;
 
 enum Flag {
     Zero,
@@ -51,7 +52,21 @@ impl CPU {
                 }
             }
         }
+    }
 
+    pub fn interrupt_ready(&self) -> bool {
+        return self.IF.enabled_any();
+    }
+
+    pub fn enable_interrupt(&mut self, interrupt: Interrupt) {
+        self.IF.enable(interrupt);
+    }
+
+    pub fn setup_interrupts(&mut self, memory: &mut Memory) {
+        self.SP.write(self.SP.read() - 1);
+        memory.write(self.SP.read(), self.PC.read_low());
+        self.SP.wrie(self.SP.read() - 1);
+        memory.write(self.SP.read(), self.pc.read_high());
     }
 
     /*

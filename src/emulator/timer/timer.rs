@@ -43,7 +43,7 @@ impl Timer {
         if (self.counter & (0b1 << freq_bit)) > 0 && (self.tac & 0b100) as u16 > 0 {
             let update = self.tima.overflowing_add(1);
             if update.1 {
-                self.tima = self.tma;
+                self.tima = 0;
                 return true;
             } else {
                 self.tima += 1;
