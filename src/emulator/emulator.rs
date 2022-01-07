@@ -11,6 +11,12 @@ pub struct Emulator {
     timer: Timer,
     joypad: Joypad,
     video: VideoController,
+    timer_state;
+}
+
+enum TimerState {
+    Steady,
+    InterruptReady,
 }
 
 pub enum Platform {
@@ -46,7 +52,11 @@ impl Emulator {
         CPU needs reference to Memory, Timer, Video Controller to read/write values
      */
     pub fn tick(&mut self) {
-        self.timer.tick();
+        if self.timer.tick() { self.timer_state = TimerState::Steady }
+        match self.timer_state {
+            TimerState::InterruptReady => {}
+        }
+
         //check interrupts, process if necessary
         //fetch instruction
     }

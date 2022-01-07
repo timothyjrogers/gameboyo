@@ -69,7 +69,7 @@ impl InterruptEnable {
         return (self.bits & mask) > 0;
     }
 
-    pub fn enable(&mut self, interrupt: Interrupt) {
+     pub fn enable(&mut self, interrupt: Interrupt) {
         let mut mask;
         match interrupt {
             Interrupt::VerticalBlanking => mask = 0b00000001,
