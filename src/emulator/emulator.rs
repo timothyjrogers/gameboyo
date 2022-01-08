@@ -12,12 +12,22 @@ pub struct Emulator {
     timer: Timer,
     joypad: Joypad,
     video: VideoController,
-    timer_state;
+    timer_state,
+    interrupt_state: InterruptState,
 }
 
 enum TimerState {
-    Steady,
+    Nil,
     InterruptReady,
+}
+
+enum InterruptState {
+    Nil,
+    Nop1,
+    Nop2,
+    PushPC1,
+    PushPC2,
+    SetPC,
 }
 
 pub enum Platform {
@@ -46,26 +56,55 @@ impl Emulator {
             timer,
             joypad,
             video,
+            timer_state: Timer::Nil,
+            interrupt_state: InterruptState::Nil,
         }
     }
 
     /*
         CPU needs reference to Memory, Timer, Video Controller to read/write values
+
+        First tick the timer module. If TIMA overflows, set the timer state so an interrupt will be set on the NEXT machine cycle.
+        Next, check if any interrupt flags are set for interrupts that are enabled. If so:
+            - Get highest-priority (lowest address) Interrupt vector
+            - Run interrupt handler (typically disables IME while handling):
+                - (2 machine cycles) NOP
+                - (2 machine cycles) Push current PC to stack
+                - (1 machine cycle) Set PC to Interrupt vector
+            - Loop until all enabled interrupt flags are cleared
+        Next, fetch / decode / execute from memory[PC]
      */
     pub fn tick(&mut self) {
-        match self.timer_state {
+        match &self.timer_state {
             TimerState::InterruptReady => {
                 self.cpu.enable_interrupt(Interrupt::Timer);
                 self.timer.set_tima();
-                self.timer_state = TimerState::Steady;
+                self.timer_state = TimerState::Nil;
             },
             _ => ()
         }
         if self.timer.tick() { self.timer_state = TimerState::InterruptReady }
 
         //check interrupts, process if necessary
-        if self.cpu.interrupt_ready() {
-            self.cpu.setup_interrupts(&mut self.memory);
+        match &self.interrupt_state {
+            InterruptState::Nil => {
+                if self.cpu.interrupt_ready() {
+                    self.cpu.setup_interrupts(&mut self.memory);
+                }
+            },
+            InterruptState::Nop1 => {
+                self.interrupt_state = InterruptState::Nop1;
+                return;
+            },
+            InterruptState::Nop2 => {
+                self.interrupt_state = InterruptState::PushPC1;
+                return;
+            },
+            InterruptState::PushPC1=> {
+
+            }
+            InterruptState::PushPC2 => {},
+            InterruptState::SetPC => {},
         }
         //fetch instruction
     }
