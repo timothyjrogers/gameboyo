@@ -77,7 +77,6 @@ impl Emulator {
                 - (2 machine cycles) NOP
                 - (2 machine cycles) Push current PC to stack
                 - (1 machine cycle) Set PC to Interrupt vector
-            - Loop until all enabled interrupt flags are cleared
         Next, fetch / decode / execute from memory[PC]
      */
     pub fn tick(&mut self) {
