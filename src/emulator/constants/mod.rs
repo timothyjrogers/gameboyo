@@ -66,7 +66,7 @@ pub const HRAM_START: usize = 0xFF80;
 pub const HRAM_END: usize = 0xFFFE;
 pub const IE_REGISTER: usize = 0xFFFF;
 
-//Size Constants
+//Size Constant
 pub const FOUR_KB: usize = 4096;
 pub const EIGHT_KB: usize = 8192;
 pub const SIXTEEN_KB: usize = 16384;
@@ -86,3 +86,10 @@ pub const GBC_HL: u16 = 0x000D;
 pub const GBC_SP: u16 = 0xFFFE;
 pub const GBC_PC: u16 = 0x0100;
 pub const GBC_DIV: u16 = 0x1EA0;
+
+//Interrupt Vectors
+pub const INT_VBL: u16 = 0x0040;
+pub const INT_STAT: u16 = 0x0048;
+pub const INT_TIMER: u16 = 0x0050;
+pub const INT_SERIAL: u16 = 0x0058;
+pub const INT_JOYPAD: u16 = 0x0060;

@@ -20,6 +20,7 @@ pub struct CPU {
     IF: InterruptFlags,
     IE: InterruptEnable,
     IME: u8,
+    cycle: u32,
 }
 
 impl CPU {
@@ -36,6 +37,7 @@ impl CPU {
                     IF: InterruptFlags::new(),
                     IE: InterruptEnable::new(),
                     IME: 1,
+                    cycle: 0,
                 }
             },
             Platform::GBC => {
@@ -49,13 +51,29 @@ impl CPU {
                     IF: InterruptFlags::new(),
                     IE: InterruptEnable::new(),
                     IME: 1,
+                    cycle: 0,
                 }
             }
         }
     }
 
-    pub fn interrupt_ready(&self) -> bool {
-        return self.IF.enabled_any();
+    pub fn set_pc(&mut self, val: u16) {
+        self.pc.write(val);
+    }
+
+    pub fn get_interrupt(&self) -> Option<Interrupt> {
+        if self.IF.enabled(Interrupt::VerticalBlanking) && self.IE.enabled(Interrupt::VerticalBlanking) && self.IME == 1 {
+            return Some(Interrupt::VerticalBlanking);
+        } else if self.IF.enabled(Interrupt::LcdStat) && self.IE.enabled(Interrupt::LcdStat) && self.IME == 1 {
+            return Some(Interrupt::LcdStat);
+        } else if self.IF.enabled(Interrupt::Timer) && self.IE.enabled(Interrupt::Timer) && self.IME == 1 {
+            return Some(Interrupt::Timer);
+        } else if self.IF.enabled(Interrupt::Serial) && self.IE.enabled(Interrupt::Serial) && self.IME == 1 {
+            return Some(Interrupt::Serial);
+        } else if self.IF.enabled(Interrupt::Joypad) && self.IE.enabled(Interrupt::Joypad) && self.IME == 1 {
+            return Some(Interrupt::Joypad);
+        }
+        return None;
     }
 
     pub fn enable_interrupt(&mut self, interrupt: Interrupt) {
@@ -67,6 +85,11 @@ impl CPU {
         memory.write(self.SP.read(), self.PC.read_low());
         self.SP.wrie(self.SP.read() - 1);
         memory.write(self.SP.read(), self.pc.read_high());
+    }
+
+    pub fn push_stack(&mut self, memory: &mut Memory, data: u8) {
+        self.SP.write(self.SP.read() - 1);
+        memory.write(self.sp.read(), data);
     }
 
     /*

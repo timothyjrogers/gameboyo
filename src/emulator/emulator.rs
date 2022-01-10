@@ -12,8 +12,10 @@ pub struct Emulator {
     timer: Timer,
     joypad: Joypad,
     video: VideoController,
-    timer_state,
+    timer_state: TimerState,
     interrupt_state: InterruptState,
+    control_state: ControlState,
+    cycle: u32,
 }
 
 enum TimerState {
@@ -23,16 +25,18 @@ enum TimerState {
 
 enum InterruptState {
     Nil,
-    Nop1,
-    Nop2,
-    PushPC1,
-    PushPC2,
-    SetPC,
+    InProgress((Interrupt, u32)),
 }
 
 pub enum Platform {
     DMG,
     GBC
+}
+
+enum ControlState {
+    Ready,
+    Cpu,
+    Isr,
 }
 
 impl Emulator {
@@ -56,8 +60,10 @@ impl Emulator {
             timer,
             joypad,
             video,
-            timer_state: Timer::Nil,
+            timer_state: TimerState::Nil,
             interrupt_state: InterruptState::Nil,
+            control_state: ControlState::Ready,
+            cycle: 0,
         }
     }
 
@@ -75,38 +81,60 @@ impl Emulator {
         Next, fetch / decode / execute from memory[PC]
      */
     pub fn tick(&mut self) {
+        //Tick the system internal timer (and thereby DIV). If TIMA overflows, set IF for timer overflow
         match &self.timer_state {
             TimerState::InterruptReady => {
-                self.cpu.enable_interrupt(Interrupt::Timer);
-                self.timer.set_tima();
-                self.timer_state = TimerState::Nil;
+                if self.cycle == 0 {
+                    self.cpu.enable_interrupt(Interrupt::Timer);
+                    self.timer.set_tima();
+                    self.timer_state = TimerState::Nil;
+                }
             },
             _ => ()
         }
         if self.timer.tick() { self.timer_state = TimerState::InterruptReady }
+        //TODO -- Check Joypad. State to be passed in from Iced
 
-        //check interrupts, process if necessary
-        match &self.interrupt_state {
-            InterruptState::Nil => {
-                if self.cpu.interrupt_ready() {
-                    self.cpu.setup_interrupts(&mut self.memory);
+        //check interrupts, transfer control via ISR if necessary
+        if self.cycle == 0 {
+            match &self.interrupt_state {
+                InterruptState::Nil => {
+                    match self.cpu.get_interrupt() {
+                        Some(x) => {
+                            self.interrupt_state = InterruptState::InProgress((*x, 0));
+                            self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1};
+                            return;
+                        },
+                        None => ()
+                    }
+                },
+                InterruptState::InProgress(c) => {
+                    if *c.1 < 8 || (*c.1 > 8 && *c.1 < 16) || (*c.1 > 16 && *c.1 < 20) {
+                        self.interrupt_state = (*c.0, *c.1 + 1);
+                    } else if *c.1 == 8 {
+                        self.cpu.setup_interrupts(&mut self.memory);
+                        self.interrupt_state = (*c.0, *c.1 + 1);
+                    } else if *c.1 == 16 {
+                        match *c.0 {
+                            Interrupt::VerticalBlanking => self.cpu.set_pc(constants::INT_VBL),
+                            Interrupt::LcdStat => self.cpu.set_pc(constants::INT_STAT),
+                            Interrupt::Timer => self.cpu.set_pc(constants::INT_TIMER),
+                            Interrupt::Serial => self.cpu.set_pc(constants::INT_SERIAL),
+                            Interrupt::Joypad => self.cpu.set_pc(constants::INT_JOYPAD),
+                        }
+                        self.interrupt_state = (*c.0, *c.1 + 1);
+                    } else {
+                        self.interrupt_state = InterruptState::Nil;
+                    }
+                    self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1};
+                    return;
                 }
-            },
-            InterruptState::Nop1 => {
-                self.interrupt_state = InterruptState::Nop1;
-                return;
-            },
-            InterruptState::Nop2 => {
-                self.interrupt_state = InterruptState::PushPC1;
-                return;
-            },
-            InterruptState::PushPC1=> {
-
             }
-            InterruptState::PushPC2 => {},
-            InterruptState::SetPC => {},
         }
-        //fetch instruction
+        //Tick the CPU on each clock, pass exact cycle position into CPU
+        //self.cpu.tick(self.cycle)
+        //increment cycle position (4 clock ticks per machine cycle)
+        self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1};
     }
 
     /*
