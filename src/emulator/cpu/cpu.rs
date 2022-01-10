@@ -10,6 +10,12 @@ enum Flag {
     Carry,
 }
 
+pub enum CpuState {
+    Ready,
+    Busy,
+    Isr,
+}
+
 pub struct CPU {
     AF: Register,
     BC: Register,
@@ -21,6 +27,7 @@ pub struct CPU {
     IE: InterruptEnable,
     IME: u8,
     cycle: u32,
+    pub state: CpuState,
 }
 
 impl CPU {
@@ -38,6 +45,7 @@ impl CPU {
                     IE: InterruptEnable::new(),
                     IME: 1,
                     cycle: 0,
+                    state: CpuState::Ready,
                 }
             },
             Platform::GBC => {
@@ -56,6 +64,10 @@ impl CPU {
             }
         }
     }
+
+    //TODO pub fn isr(&mut self, cycle: u32) -> CpuState
+
+    //TODO pub fn tick(&mut self, cycle u32)
 
     pub fn set_pc(&mut self, val: u16) {
         self.pc.write(val);

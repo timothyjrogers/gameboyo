@@ -5,6 +5,7 @@ use crate::emulator::timer::timer::Timer;
 use crate::emulator::joypad::joypad::Joypad;
 use crate::emulator::video::video::VideoController;
 use crate::emulator::cpu::registers::Interrupt;
+use crate::emulator::cpu::cpu::CpuState;
 
 pub struct Emulator {
     memory: Memory,
@@ -83,10 +84,13 @@ impl Emulator {
         //Tick the system internal timer (and thereby DIV). If TIMA overflows, set IF for timer overflow
         match &self.timer_state {
             TimerState::InterruptReady => {
-                if self.cycle == 0 {
-                    self.cpu.enable_interrupt(Interrupt::Timer);
-                    self.timer.set_tima();
-                    self.timer_state = TimerState::Nil;
+                match self.cpu.state {
+                    CpuState::Ready => {
+                        self.cpu.enable_interrupt(Interrupt::Timer);
+                        self.timer.set_tima();
+                        self.timer_state = TimerState::Nil;
+                    },
+                    _ => ()
                 }
             },
             _ => ()
@@ -95,13 +99,13 @@ impl Emulator {
         //TODO -- Check Joypad. State to be passed in from Iced
 
         //check interrupts, transfer control via ISR if necessary
-        if self.cycle == 0 {
+        if self.cpu.state == CpuState::Ready {
             match &self.interrupt_state {
                 InterruptState::Nil => {
                     match self.cpu.get_interrupt() {
                         Some(x) => {
                             self.interrupt_state = InterruptState::InProgress((*x, 0));
-                            self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1};
+                            self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1 };
                             return;
                         },
                         None => ()
@@ -125,7 +129,7 @@ impl Emulator {
                     } else {
                         self.interrupt_state = InterruptState::Nil;
                     }
-                    self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1};
+                    self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1 };
                     return;
                 }
             }
