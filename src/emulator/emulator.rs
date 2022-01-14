@@ -20,7 +20,8 @@ pub struct Emulator {
 }
 
 enum TimerState {
-    Nil,
+    Normal,
+    InterruptPending,
     InterruptReady,
 }
 
@@ -83,6 +84,9 @@ impl Emulator {
     pub fn tick(&mut self) {
         //Tick the system internal timer (and thereby DIV). If TIMA overflows, set IF for timer overflow
         match &self.timer_state {
+            TimerState::InterruptPending => {
+
+            },
             TimerState::InterruptReady => {
                 match self.cpu.state {
                     CpuState::Ready => {
@@ -93,9 +97,12 @@ impl Emulator {
                     _ => ()
                 }
             },
-            _ => ()
+            TimerState::Normal => {
+                for _ in 0..4 {
+                    if self.timer.tick() { self.timer_state = TimerState::InterruptReady }
+                }
+            }
         }
-        if self.timer.tick() { self.timer_state = TimerState::InterruptReady }
         //TODO -- Check Joypad. State to be passed in from Iced
 
         //check interrupts, transfer control via ISR if necessary
