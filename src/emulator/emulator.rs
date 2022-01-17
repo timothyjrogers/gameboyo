@@ -15,30 +15,24 @@ pub struct Emulator {
     video: VideoController,
     timer_state: TimerState,
     interrupt_state: InterruptState,
-    control_state: ControlState,
-    cycle: u32,
 }
 
 enum TimerState {
     Normal,
-    InterruptPending,
     InterruptReady,
 }
 
 enum InterruptState {
-    Nil,
-    InProgress((Interrupt, u32)),
+    Ready,
+    Nop(Interrupt),
+    PushPc(Interrupt),
+    WaitPc(Interrupt),
+    LoadVector(Interrupt),
 }
 
 pub enum Platform {
     DMG,
     GBC
-}
-
-enum ControlState {
-    Ready,
-    Cpu,
-    Isr,
 }
 
 impl Emulator {
@@ -64,8 +58,6 @@ impl Emulator {
             video,
             timer_state: TimerState::Nil,
             interrupt_state: InterruptState::Nil,
-            control_state: ControlState::Ready,
-            cycle: 0,
         }
     }
 
@@ -84,22 +76,18 @@ impl Emulator {
     pub fn tick(&mut self) {
         //Tick the system internal timer (and thereby DIV). If TIMA overflows, set IF for timer overflow
         match &self.timer_state {
-            TimerState::InterruptPending => {
-
-            },
             TimerState::InterruptReady => {
-                match self.cpu.state {
-                    CpuState::Ready => {
-                        self.cpu.enable_interrupt(Interrupt::Timer);
-                        self.timer.set_tima();
-                        self.timer_state = TimerState::Nil;
-                    },
-                    _ => ()
-                }
+                self.timer.set_tima();
+                self.timer_state = TimerState::Normal;
+                if self.timer.read_tima() == 0 { self.cpu.enable_interrupt(Interrupt::Timer); }
             },
             TimerState::Normal => {
                 for _ in 0..4 {
-                    if self.timer.tick() { self.timer_state = TimerState::InterruptReady }
+                    if self.timer.tick() {
+                        self.timer_state = TimerState::InterruptReady;
+                        self.timer.reset_tima();
+                        break;
+                    }
                 }
             }
         }
@@ -108,41 +96,39 @@ impl Emulator {
         //check interrupts, transfer control via ISR if necessary
         if self.cpu.state == CpuState::Ready {
             match &self.interrupt_state {
-                InterruptState::Nil => {
+                InterruptState::Ready => {
                     match self.cpu.get_interrupt() {
                         Some(x) => {
-                            self.interrupt_state = InterruptState::InProgress((*x, 0));
-                            self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1 };
+                            self.interrupt_state = InterruptState::Nop(x);
+                            self.cpu.reset_interrupt_flag(x);
+                            self.cpu.reset_ime();
                             return;
                         },
                         None => ()
                     }
                 },
-                InterruptState::InProgress(c) => {
-                    if *c.1 < 8 || (*c.1 > 8 && *c.1 < 16) || (*c.1 > 16 && *c.1 < 20) {
-                        self.interrupt_state = (*c.0, *c.1 + 1);
-                    } else if *c.1 == 8 {
-                        self.cpu.setup_interrupts(&mut self.memory);
-                        self.interrupt_state = (*c.0, *c.1 + 1);
-                    } else if *c.1 == 16 {
-                        match *c.0 {
-                            Interrupt::VerticalBlanking => self.cpu.set_pc(constants::INT_VBL),
-                            Interrupt::LcdStat => self.cpu.set_pc(constants::INT_STAT),
-                            Interrupt::Timer => self.cpu.set_pc(constants::INT_TIMER),
-                            Interrupt::Serial => self.cpu.set_pc(constants::INT_SERIAL),
-                            Interrupt::Joypad => self.cpu.set_pc(constants::INT_JOYPAD),
-                        }
-                        self.interrupt_state = (*c.0, *c.1 + 1);
-                    } else {
-                        self.interrupt_state = InterruptState::Nil;
-                    }
-                    self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1 };
+                InterruptState::Nop(x) => {
+                    self.interrupt_state = InterruptState::PushPc(*x);
+                    return;
+                },
+                InterruptState::PushPc(x) => {
+                    self.cpu.push_pc(&mut self.memory);
+                    self.interrupt_state = InterruptState::WaitPc(*x);
+                    return;
+                },
+                InterruptState::WaitPc(x) => {
+                    self.interrupt_state = InterruptState::LoadVector(*x);
+                    return;
+                },
+                InterruptState::LoadVector(i) => {
+                    self.cpu.load_vector(*x);
+                    self.interrupt_state = InterruptState::Ready;
                     return;
                 }
             }
         }
         //Tick the CPU on each clock, pass exact cycle position into CPU
-        //self.cpu.tick(self.cycle)
+        self.cpu.tick()
         //increment cycle position (4 clock ticks per machine cycle)
         self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1};
     }

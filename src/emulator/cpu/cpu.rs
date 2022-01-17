@@ -12,8 +12,8 @@ enum Flag {
 
 pub enum CpuState {
     Ready,
-    Busy,
-    Isr,
+    Fetch,
+
 }
 
 pub struct CPU {
@@ -60,14 +60,15 @@ impl CPU {
                     IE: InterruptEnable::new(),
                     IME: 1,
                     cycle: 0,
+                    state: CpuState::Ready,
                 }
             }
         }
     }
 
-    //TODO pub fn isr(&mut self, cycle: u32) -> CpuState
+    pub fn tick(&mut self, memory: &mut Memory) -> CpuState {
 
-    //TODO pub fn tick(&mut self, cycle u32)
+    }
 
     pub fn set_pc(&mut self, val: u16) {
         self.pc.write(val);
@@ -88,15 +89,33 @@ impl CPU {
         return None;
     }
 
-    pub fn enable_interrupt(&mut self, interrupt: Interrupt) {
+    pub fn reset_ime(&mut self) { self.IME = 0; }
+
+    pub fn set_interrupt_flag(&mut self, interrupt: Interrupt) {
         self.IF.enable(interrupt);
     }
 
-    pub fn setup_interrupts(&mut self, memory: &mut Memory) {
+    pub fn reset_interrupt_flag(&mut self, interrupt: Interrupt) {
+        self.IF.disable(interrupt);
+    }
+
+    pub fn push_pc(&mut self, memory: &mut Memory) {
+        let pc_high: u8 = (&self.PC & 0xFF00) >> 8 as u8;
+        let pc_low: u8 = (&self.PC & 0x00FF) as u8;
         self.SP.write(self.SP.read() - 1);
-        memory.write(self.SP.read(), self.PC.read_low());
-        self.SP.wrie(self.SP.read() - 1);
-        memory.write(self.SP.read(), self.pc.read_high());
+        memory.write(self.sp.read(), pc_high);
+        self.SP.write(self.SP.read() - 1);
+        memory.write(self.sp.read(), pc_low);
+    }
+
+    pub fn load_vector(&mut self, interrupt: Interrupt) {
+        match interrupt {
+            Interrupt::VerticalBlanking => self.set_pc(constants::INT_VBL),
+            Interrupt::LcdStat => self.set_pc(constants::INT_STAT),
+            Interrupt::Timer => self.set_pc(constants::INT_TIMER),
+            Interrupt::Serial => self.set_pc(constants::INT_SERIAL),
+            Interrupt::Joypad => self.set_pc(constants::INT_JOYPAD),
+        }
     }
 
     pub fn push_stack(&mut self, memory: &mut Memory, data: u8) {

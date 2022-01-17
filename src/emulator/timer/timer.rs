@@ -53,9 +53,13 @@ impl Timer {
         false
     }
 
+    pub fn read_tima(&self) -> u8 { self.tima }
+
     pub fn set_tima(&mut self) {
         self.tima = self.tma;
     }
+
+    pub fn reset_tima(&mut self) { self.tima = 0; }
 
     pub fn write_counter(&mut self) {
         self.counter = 0;

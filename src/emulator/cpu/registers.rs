@@ -40,6 +40,7 @@ impl Register {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum Interrupt {
     VerticalBlanking,
     LcdStat,
