@@ -10,10 +10,12 @@ enum Flag {
     Carry,
 }
 
+#[derive(Copy, Clone)]
 pub enum CpuState {
     Ready,
     Fetch,
-
+    FetchCB,
+    Execute((u8, bool)),
 }
 
 pub struct CPU {
@@ -67,7 +69,24 @@ impl CPU {
     }
 
     pub fn tick(&mut self, memory: &mut Memory) -> CpuState {
-
+        match self.state {
+            CpuState::Ready => {
+                //fetch instruction at [PC]
+                let mut pc = self.PC.read();
+                let mut cb_instr = false;
+                let mut instr = memory.read(pc);
+                self.PC.write(pc + 1)
+                if instr == 0xCB {
+                    cb_instr = true;
+                    pc = pc + 1;
+                    instr = memory.read(pc);
+                    self.PC.write(pc + 1);
+                }
+                if
+            },
+            CpuState::Execute(t) => {},
+        }
+        return self.state;
     }
 
     pub fn set_pc(&mut self, val: u16) {
