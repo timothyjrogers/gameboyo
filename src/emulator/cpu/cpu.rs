@@ -13,9 +13,11 @@ enum Flag {
 #[derive(Copy, Clone)]
 pub enum CpuState {
     Ready,
-    Fetch,
-    FetchCB,
-    Execute((u8, bool)),
+    M2((u16, bool)),
+    M3((u16, bool)),
+    M4((u16, bool)),
+    M5((u16, bool)),
+    M6((u16, bool)),
 }
 
 pub struct CPU {
@@ -75,14 +77,15 @@ impl CPU {
                 let mut pc = self.PC.read();
                 let mut cb_instr = false;
                 let mut instr = memory.read(pc);
-                self.PC.write(pc + 1)
+                self.PC.write(pc + 1);
+                /*
                 if instr == 0xCB {
                     cb_instr = true;
                     pc = pc + 1;
                     instr = memory.read(pc);
                     self.PC.write(pc + 1);
                 }
-                if
+                 */
             },
             CpuState::Execute(t) => {},
         }
