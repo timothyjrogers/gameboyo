@@ -13,11 +13,11 @@ enum Flag {
 #[derive(Copy, Clone)]
 pub enum CpuState {
     Ready,
-    M2((u16, bool)),
-    M3((u16, bool)),
-    M4((u16, bool)),
-    M5((u16, bool)),
-    M6((u16, bool)),
+    M2(u16),
+    M3(u16),
+    M4(u16),
+    M5(u16),
+    M6(u16),
 }
 
 pub struct CPU {
@@ -75,19 +75,24 @@ impl CPU {
             CpuState::Ready => {
                 //fetch instruction at [PC]
                 let mut pc = self.PC.read();
-                let mut cb_instr = false;
                 let mut instr = memory.read(pc);
                 self.PC.write(pc + 1);
-                /*
                 if instr == 0xCB {
-                    cb_instr = true;
-                    pc = pc + 1;
-                    instr = memory.read(pc);
-                    self.PC.write(pc + 1);
-                }
-                 */
+                    self.state = CpuState::M2((instr as u16) << 8);
+                } else if instr == 0x00 {
+                    self.state = CpuState::Ready;
+                } else if instr ==
             },
-            CpuState::Execute(t) => {},
+            CpuState::M2(x) => {
+                if x == 0xCB00 {
+                    let mut pc = self.PC.read();
+                    let mut instr = memory.read(pc);
+                    self.PC.write(pc + 1);
+                    self.state = CpuState::M3(x + instr);
+                    return self.state;
+                }
+            }
+            _ => {},
         }
         return self.state;
     }
@@ -145,26 +150,7 @@ impl CPU {
         memory.write(self.sp.read(), data);
     }
 
-    /*
-    fn update_flags(&mut self, flag: Flag, set: bool) {
-        let mut mask: u16 = 0;
-        if set {
-            match flag {
-                Flag::Zero => mask = constants::SET_ZERO_FLAG_MASK,
-                Flag::Subtraction => mask = constants::SET_SUBTRACTION_FLAG_MASK,
-                Flag::HalfCarry => mask = constants::SET_HALFCARRY_FLAG_MASK,
-                Flag::Carry => mask = constants::SET_CARRY_FLAG_MASK
-            }
-            self.AF = self.AF | mask;
-        } else {
-            match flag {
-                Flag::Zero => mask = constants::UNSET_ZERO_FLAG_MASK,
-                Flag::Subtraction => mask = constants::UNSET_SUBTRACTION_FLAG_MASK,
-                Flag::HalfCarry => mask = constants::UNSET_HALFCARRY_FLAG_MASK,
-                Flag::Carry => mask = constants::UNSET_CARRY_FLAG_MASK
-            }
-            self.AF = self.AF & mask;
-        }
+    pub fn x01(&mut self, memory: &mut Memory) {
+
     }
-     */
 }
