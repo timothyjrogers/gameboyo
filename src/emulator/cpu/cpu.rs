@@ -34,6 +34,11 @@ pub struct CPU {
     pub state: CpuState,
 }
 
+struct CycleState {
+    instruction: u16,
+    
+}
+
 impl CPU {
     pub fn new(platform: &Platform) -> Self {
         match platform {
