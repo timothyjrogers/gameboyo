@@ -13,11 +13,11 @@ enum Flag {
 #[derive(Copy, Clone)]
 pub enum CpuState {
     Ready,
-    M2(u16),
-    M3(u16),
-    M4(u16),
-    M5(u16),
-    M6(u16),
+    M2(CycleState),
+    M3(CycleState),
+    M4(CycleState),
+    M5(CycleState),
+    M6(CycleState),
 }
 
 pub struct CPU {
@@ -36,7 +36,14 @@ pub struct CPU {
 
 struct CycleState {
     instruction: u16,
+    d16: u16,
+    d8: u8,
+}
 
+impl CycleState {
+    fn new() -> Self {
+        Self { instruction: 0, d16: 0, d8: 0}
+    }
 }
 
 impl CPU {
@@ -82,19 +89,25 @@ impl CPU {
                 let mut pc = self.PC.read();
                 let mut instr = memory.read(pc);
                 self.PC.write(pc + 1);
+                let mut cycle_state = CycleState::new();
+                cycle_state.instruction = instr as u16;
                 if instr == 0xCB {
-                    self.state = CpuState::M2((instr as u16) << 8);
+                    self.state = CpuState::M2(cycle_state);
                 } else if instr == 0x00 {
                     self.state = CpuState::Ready;
-                } else if instr ==
+                } else if instr == 0x01 {
+                    self.state = CpuState::M2(cycle_state);
+                }
             },
             CpuState::M2(x) => {
-                if x == 0xCB00 {
+                if x.instruction == 0xCB00 {
                     let mut pc = self.PC.read();
                     let mut instr = memory.read(pc);
                     self.PC.write(pc + 1);
                     self.state = CpuState::M3(x + instr);
                     return self.state;
+                } else if x.instruction == 0x01 {
+
                 }
             }
             _ => {},
