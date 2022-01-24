@@ -36,7 +36,7 @@ pub struct CPU {
 
 struct CycleState {
     instruction: u16,
-    
+
 }
 
 impl CPU {
