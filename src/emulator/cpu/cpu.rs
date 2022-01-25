@@ -83,10 +83,10 @@ impl CPU {
     }
 
     pub fn tick(&mut self, memory: &mut Memory) -> CpuState {
-        match self.state {
+        let mut pc = self.PC.read();
+        match &self.state {
             CpuState::Ready => {
                 //fetch instruction at [PC]
-                let mut pc = self.PC.read();
                 let mut instr = memory.read(pc);
                 self.PC.write(pc + 1);
                 let mut cycle_state = CycleState::new();
@@ -97,17 +97,41 @@ impl CPU {
                     self.state = CpuState::Ready;
                 } else if instr == 0x01 {
                     self.state = CpuState::M2(cycle_state);
+                } else if instr == 0x02 {
+                    self.state = CpuState::M2(cycle_state);
+                } else if instr == 0x03 {
+                    self.state = CpuState::M2(cycle_state);
+                } else if instr == 0x04 {
+                    self.state = CpuState::M2(cycle_state);
                 }
             },
             CpuState::M2(x) => {
+                let mut cycle_state = (*x).clone();
                 if x.instruction == 0xCB00 {
-                    let mut pc = self.PC.read();
                     let mut instr = memory.read(pc);
                     self.PC.write(pc + 1);
-                    self.state = CpuState::M3(x + instr);
-                    return self.state;
+                    cycle_state.instruction = 0xCB00 + instr;
+                    self.state = CpuState::M3(cycle_state);
                 } else if x.instruction == 0x01 {
-
+                    let val = memory.read(pc);
+                    self.PC.write(pc + 1);
+                    cycle_state.d16 += val;
+                    self.state = CpuState::M3(cycle_state);
+                } else if x.instruction == 0x02 {
+                    memory.write(self.BC.read(), self.AF.read_high());
+                    self.state = CpuState::Ready;
+                } else if x.instruction == 0x03 {
+                    self.BC.write(self.BC.read() + 1);
+                    self.state = CpuState::Ready;
+                }
+            },
+            CpuState::M3(x) => {
+                let mut cycle_state = (*x).clone();
+                if x.instruction == 0x01 {
+                    let val = memory.read(pc);
+                    cycle_state.d16 += (val as u16) << 8;
+                    self.BC.write(cycle_state.d16 + ((val as u16) << 8));
+                    self.state = CpuState::Ready;
                 }
             }
             _ => {},
