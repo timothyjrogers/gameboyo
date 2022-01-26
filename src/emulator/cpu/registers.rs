@@ -3,6 +3,13 @@ pub struct Register {
     low: u8,
 }
 
+pub struct Flags {
+    z: bool,
+    n: bool,
+    h: bool,
+    c: bool,
+}
+
 impl Register {
     pub fn new(data: u16) -> Self {
         Self {
@@ -37,6 +44,10 @@ impl Register {
 
     pub fn read_low(&self) -> u8 {
         return self.low;
+    }
+
+    pub fn add(&mut self, val: u16) -> Flags {
+
     }
 }
 

@@ -95,13 +95,7 @@ impl CPU {
                     self.state = CpuState::M2(cycle_state);
                 } else if instr == 0x00 {
                     self.state = CpuState::Ready;
-                } else if instr == 0x01 {
-                    self.state = CpuState::M2(cycle_state);
-                } else if instr == 0x02 {
-                    self.state = CpuState::M2(cycle_state);
-                } else if instr == 0x03 {
-                    self.state = CpuState::M2(cycle_state);
-                } else if instr == 0x04 {
+                } else if instr >= 0x01 && instr <= 0x04 {
                     self.state = CpuState::M2(cycle_state);
                 }
             },
@@ -123,6 +117,8 @@ impl CPU {
                 } else if x.instruction == 0x03 {
                     self.BC.write(self.BC.read() + 1);
                     self.state = CpuState::Ready;
+                } else if x.instruction == 0x04 {
+                    //TODO INC B
                 }
             },
             CpuState::M3(x) => {
