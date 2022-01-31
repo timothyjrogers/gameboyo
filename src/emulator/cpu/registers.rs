@@ -1,3 +1,6 @@
+use crate::emulator::emulator::Platform;
+use crate::emulator::constants;
+
 pub struct Register {
     high: u8,
     low: u8,
@@ -49,6 +52,133 @@ impl Register {
     pub fn add(&mut self, val: u16) -> Flags {
 
     }
+}
+
+pub struct Registers {
+    a: u8,
+    b: u8,
+    c: u8,
+    d: u8,
+    e: u8,
+    f: u8,
+    h: u8,
+    l: u8,
+}
+
+pub enum Targets8 {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    H,
+    L,
+}
+
+pub enum Targets16 {
+    AF,
+    BC,
+    DE,
+    HL,
+}
+
+impl Registers {
+    pub fn new(platform: &Platform) -> Self {
+        match platform {
+            Platform::DMG => {
+                Self {
+                    a: ((constants::DMG_AF & 0xFF00) >> 8) as u8,
+                    b: ((constants::DMG_BC & 0xFF00) >> 8) as u8,
+                    c: (constants::DMG_BC & 0x00FF) as u8,
+                    d: ((constants::DMG_DE & 0xFF00) >> 8) as u8,
+                    e: (constants::DMG_DE & 0x00FF) as u8,
+                    f: (constants::DMG_AF & 0x00FF) as u8,
+                    h: ((constants::DMG_HL & 0xFF00) >> 8) as u8,
+                    l: (constants::DMG_HL & 0x00FF) as u8,
+                }
+            },
+            Platform::GBC => {
+                Self {
+                    a: ((constants::GBC_AF & 0xFF00) >> 8) as u8,
+                    b: ((constants::GBC_BC & 0xFF00) >> 8) as u8,
+                    c: (constants::GBC_BC & 0x00FF) as u8,
+                    d: ((constants::GBC_DE & 0xFF00) >> 8) as u8,
+                    e: (constants::GBC_DE & 0x00FF) as u8,
+                    f: (constants::GBC_AF & 0x00FF) as u8,
+                    h: ((constants::GBC_HL & 0xFF00) >> 8) as u8,
+                    l: (constants::GBC_HL & 0x00FF) as u8,
+                }
+            }
+        }
+    }
+
+    pub fn get8(&self, r: Targets8) -> u8 {
+        match r {
+            Targets8::A => self.a,
+            Targets8::B => self.b,
+            Targets8::C => self.c,
+            Targets8::D => self.d,
+            Targets8::E => self.e,
+            Targets8::F => self.f,
+            Targets8::H => self.h,
+            Targets8::L => self.l,
+        }
+    }
+
+    pub fn set8(&mut self, r: Targets8, val: u8) {
+        match r {
+            Targets8::A => self.a = val,
+            Targets8::B => self.b = val,
+            Targets8::C => self.c = val,
+            Targets8::D => self.d = val,
+            Targets8::E => self.e = val,
+            Targets8::F => self.f = val,
+            Targets8::H => self.h = val,
+            Targets8::L => self.l = val,
+        }
+    }
+
+    pub fn get16(&self, rr: Targets16) -> u16 {
+        match rr {
+            Targets16::AF => (self.a as u16) << 8 + self.f,
+            Targets16::BC => (self.b as u16) << 8 + self.c,
+            Targets16::DE => (self.d as u16) << 8 + self.e,
+            Targets16::HL => (self.h as u16) << 8 + self.l,
+        }
+    }
+
+    pub fn set16(&mut self, rr: Targets16, val: u16) {
+        match rr {
+            Targets16::AF => {
+                self.a = (val >> 8) as u8;
+                self.f = (val & 0x00FF) as u8;
+            },
+            Targets16::BC => {
+                self.b = (val >> 8) as u8;
+                self.c = (val & 0x00FF) as u8;
+            },
+            Targets16::DE => {
+                self.d = (val >> 8) as u8;
+                self.e = (val & 0x00FF) as u8;
+            },
+            Targets16::HL => {
+                self.h = (val >> 8) as u8;
+                self.l = (val & 0x00FF) as u8;
+            }
+        }
+    }
+
+    pub fn add8(&mut self, r: Targets8, val: u8) {
+        match r {
+            Targets8::A => {
+                let res = self.a.overflowing_add(val);
+                self.a = res.0;
+                //TODO FLAGS if res.0 == 0 {}
+            }
+        }
+    }
+
 }
 
 #[derive(Clone, Copy)]

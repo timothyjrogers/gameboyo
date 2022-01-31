@@ -1,4 +1,4 @@
-use crate::emulator::cpu::registers::{Interrupt, InterruptFlags, InterruptEnable, Register};
+use crate::emulator::cpu::registers::{Interrupt, InterruptFlags, InterruptEnable, Registers, Targets8, Targets16};
 use crate::emulator::constants;
 use crate::emulator::emulator::Platform;
 use crate::emulator::memory::memory::Memory;
@@ -21,12 +21,9 @@ pub enum CpuState {
 }
 
 pub struct CPU {
-    AF: Register,
-    BC: Register,
-    DE: Register,
-    HL: Register,
-    SP: Register,
-    PC: Register,
+    registers: Registers,
+    sp: u16,
+    pc: u16,
     IF: InterruptFlags,
     IE: InterruptEnable,
     IME: u8,
@@ -51,12 +48,9 @@ impl CPU {
         match platform {
             Platform::DMG => {
                 Self {
-                    AF: Register::new(constants::DMG_AF),
-                    BC: Register::new(constants::DMG_BC),
-                    DE: Register::new(constants::DMG_DE),
-                    HL: Register::new(constants::DMG_HL),
-                    SP: Register::new(constants::DMG_SP),
-                    PC: Register::new(constants::DMG_PC),
+                    registers: Registers::new(platform),
+                    sp: constants::DMG_SP,
+                    pc: constants::DMG_PC,
                     IF: InterruptFlags::new(),
                     IE: InterruptEnable::new(),
                     IME: 1,
@@ -66,12 +60,9 @@ impl CPU {
             },
             Platform::GBC => {
                 Self {
-                    AF: Register::new(constants::GBC_AF),
-                    BC: Register::new(constants::GBC_BC),
-                    DE: Register::new(constants::GBC_DE),
-                    HL: Register::new(constants::GBC_HL),
-                    SP: Register::new(constants::GBC_SP),
-                    PC: Register::new(constants::GBC_PC),
+                    registers: Registers::new(platform),
+                    sp: constants::GBC_SP,
+                    pc: constants::GBC_PC,
                     IF: InterruptFlags::new(),
                     IE: InterruptEnable::new(),
                     IME: 1,
@@ -83,50 +74,48 @@ impl CPU {
     }
 
     pub fn tick(&mut self, memory: &mut Memory) -> CpuState {
-        let mut pc = self.PC.read();
         match &self.state {
             CpuState::Ready => {
-                //fetch instruction at [PC]
-                let mut instr = memory.read(pc);
-                self.PC.write(pc + 1);
-                let mut cycle_state = CycleState::new();
-                cycle_state.instruction = instr as u16;
-                if instr == 0xCB {
+                let mut instr = memory.read(self.pc);             // fetch instruction at [PC]
+                self.pc = self.pc + 1;                                     // increment PC after fetch
+                let mut cycle_state = CycleState::new();         // create new cycle state for multi-cycle instructions
+                cycle_state.instruction = instr as u16;                   // save current instruction in cycle state
+                if instr == 0xCB || (instr >= 0x01 && instr <= 0x04) {    // instr = 0xCB prefix OR 0x01 - 0x04
                     self.state = CpuState::M2(cycle_state);
-                } else if instr == 0x00 {
+                } else if instr == 0x00 {                                 // instr = 0x00 (NOP) -- one cycle
                     self.state = CpuState::Ready;
-                } else if instr >= 0x01 && instr <= 0x04 {
-                    self.state = CpuState::M2(cycle_state);
                 }
             },
             CpuState::M2(x) => {
                 let mut cycle_state = (*x).clone();
                 if x.instruction == 0xCB00 {
-                    let mut instr = memory.read(pc);
-                    self.PC.write(pc + 1);
+                    let mut instr = memory.read(self.pc);
+                    self.pc = self.pc + 1;
                     cycle_state.instruction = 0xCB00 + instr;
                     self.state = CpuState::M3(cycle_state);
                 } else if x.instruction == 0x01 {
                     let val = memory.read(pc);
-                    self.PC.write(pc + 1);
-                    cycle_state.d16 += val;
+                    self.pc = self.pc + 1;
+                    cycle_state.d16 = val;
                     self.state = CpuState::M3(cycle_state);
                 } else if x.instruction == 0x02 {
-                    memory.write(self.BC.read(), self.AF.read_high());
+                    memory.write(self.registers.get16(Targets16::BC), self.registers.get8(Targets8::A));
                     self.state = CpuState::Ready;
                 } else if x.instruction == 0x03 {
-                    self.BC.write(self.BC.read() + 1);
+                    let val = self.registers.get16(Targets16::BC).overflowing_add(1);
+                    self.registers.set16(Targets16::BC, val.0);
                     self.state = CpuState::Ready;
                 } else if x.instruction == 0x04 {
-                    //TODO INC B
+
                 }
             },
             CpuState::M3(x) => {
                 let mut cycle_state = (*x).clone();
                 if x.instruction == 0x01 {
                     let val = memory.read(pc);
+                    self.pc = self.pc + 1;
                     cycle_state.d16 += (val as u16) << 8;
-                    self.BC.write(cycle_state.d16 + ((val as u16) << 8));
+                    self.registers.set16(Targets16::BC, cycle_state.d16);
                     self.state = CpuState::Ready;
                 }
             }
