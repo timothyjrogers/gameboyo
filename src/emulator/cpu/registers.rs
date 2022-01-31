@@ -173,12 +173,94 @@ impl Registers {
         match r {
             Targets8::A => {
                 let res = self.a.overflowing_add(val);
+                set_h_flag((self.a & 0xF) + (val & 0xF) > 0xF);
                 self.a = res.0;
-                //TODO FLAGS if res.0 == 0 {}
+                set_z_flag( res.0 == 0);
+                set_n_flag(false);
+            },
+            Targets8::B => {
+                let res = self.b.overflowing_add(val);
+                set_h_flag((self.b & 0xF) + (val & 0xF) > 0xF);
+                self.b = res.0;
+                set_z_flag( res.0 == 0);
+                set_n_flag(false);
+            },
+            Targets8::C => {
+                let res = self.c.overflowing_add(val);
+                set_h_flag((self.c & 0xF) + (val & 0xF) > 0xF);
+                self.c = res.0;
+                set_z_flag( res.0 == 0);
+                set_n_flag(false);
+            },
+            Targets8::D => {
+                let res = self.d.overflowing_add(val);
+                set_h_flag((self.d & 0xF) + (val & 0xF) > 0xF);
+                self.d = res.0;
+                set_z_flag( res.0 == 0);
+                set_n_flag(false);
+            },
+            Targets8::E => {
+                let res = self.e.overflowing_add(val);
+                set_h_flag((self.e & 0xF) + (val & 0xF) > 0xF);
+                self.e = res.0;
+                set_z_flag( res.0 == 0);
+                set_n_flag(false);
+            },
+            Targets8::F => {
+                let res = self.f.overflowing_add(val);
+                set_h_flag((self.f & 0xF) + (val & 0xF) > 0xF);
+                self.f = res.0;
+                set_z_flag( res.0 == 0);
+                set_n_flag(false);
+            },
+            Targets8::H => {
+                let res = self.h.overflowing_add(val);
+                set_h_flag((self.h & 0xF) + (val & 0xF) > 0xF);
+                self.h = res.0;
+                set_z_flag( res.0 == 0);
+                set_n_flag(false);
+            },
+            Targets8::L => {
+                let res = self.l.overflowing_add(val);
+                set_h_flag((self.l & 0xF) + (val & 0xF) > 0xF);
+                self.l = res.0;
+                set_z_flag( res.0 == 0);
+                set_n_flag(false);
             }
         }
     }
 
+    fn set_z_flag(&mut self, set: bool) {
+        if set {
+            self.f = self.f | 0b10000000;
+        } else {
+            self.f = self.f & 0b01111111;
+        }
+    }
+
+    fn set_n_flag(&mut self, set: bool) {
+        if set {
+            self.f = self.f | 0b01000000;
+        } else {
+            self.f = self.f & 0b10111111;
+        }
+    }
+
+    fn set_h_flag(&mut self, set: bool) {
+        if set {
+            self.f = self.f | 0b00100000;
+        } else {
+            self.f = self.f & 0b11011111;
+        }
+    }
+
+    fn set_c_flag(&mut self, set: bool) {
+        if set {
+            self.f = self.f | 0b00010000;
+        } else {
+            self.f = self.f & 0b11101111;
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

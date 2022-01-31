@@ -106,7 +106,8 @@ impl CPU {
                     self.registers.set16(Targets16::BC, val.0);
                     self.state = CpuState::Ready;
                 } else if x.instruction == 0x04 {
-
+                    self.registers.add8(Targets8::B, 1);
+                    self.state = CpuState::Ready;
                 }
             },
             CpuState::M3(x) => {
@@ -125,7 +126,7 @@ impl CPU {
     }
 
     pub fn set_pc(&mut self, val: u16) {
-        self.pc.write(val);
+        self.pc = val;
     }
 
     pub fn get_interrupt(&self) -> Option<Interrupt> {
