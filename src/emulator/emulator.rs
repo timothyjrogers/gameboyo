@@ -128,7 +128,7 @@ impl Emulator {
             }
         }
         //Tick the CPU on each clock, pass exact cycle position into CPU
-        self.cpu.tick()
+        self.cpu.tick(&mut self.memory);
         //increment cycle position (4 clock ticks per machine cycle)
         self.cycle = if self.cycle == 3 { 0 } else { self.cycle + 1};
     }

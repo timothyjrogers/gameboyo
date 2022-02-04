@@ -1,3 +1,8 @@
+#[macro_use]
+extern crate lazy_static;
+
+use std::collections::HashMap;
+
 //Screen constants
 pub const SCREEN_X_DIM: u32 = 160; //unit = pixels
 pub const SCREEN_Y_DIM: u32 = 144; //unit = pixels
@@ -93,3 +98,19 @@ pub const INT_STAT: u16 = 0x0048;
 pub const INT_TIMER: u16 = 0x0050;
 pub const INT_SERIAL: u16 = 0x0058;
 pub const INT_JOYPAD: u16 = 0x0060;
+
+//OpCode Details
+lazy_static! {
+    static ref OPCODES: HashMap<u8, (u32, u32)> = {
+        let mut opcodes: HashMap<u8, u32> = HashMap::new();
+        opcodes.insert(0x00, (4, 1));
+        opcodes.insert(0x01, (12, 3));
+        opcodes.insert(0x02, (8, 1));
+        opcodes.insert(0x03, (8, 1));
+        opcodes.insert(0x04, (4, 1));
+        opcodes.insert(0x05, (4, 1));
+        opcodes.insert(0x06, (8, 2));
+        opcodes.insert(0x07, (4, 1));
+        opcodes
+    };
+}

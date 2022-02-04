@@ -169,64 +169,100 @@ impl Registers {
         }
     }
 
-    pub fn add8(&mut self, r: Targets8, val: u8) {
+    pub fn add8(&mut self, r: Targets8, val: u8, add: bool) {
+        let res: (u8, bool);
         match r {
             Targets8::A => {
-                let res = self.a.overflowing_add(val);
-                set_h_flag((self.a & 0xF) + (val & 0xF) > 0xF);
+                res = if add { self.a.overflowing_add(val) } else { self.a.overflowing_sub(val) };
+                set_h_flag(check_half_carry(self.a, val, add));
                 self.a = res.0;
-                set_z_flag( res.0 == 0);
-                set_n_flag(false);
             },
             Targets8::B => {
-                let res = self.b.overflowing_add(val);
-                set_h_flag((self.b & 0xF) + (val & 0xF) > 0xF);
+                res = if add { self.b.overflowing_add(val) } else { self.b.overflowing_sub(val) };
+                set_h_flag(check_half_carry(self.b, val, add));
                 self.b = res.0;
-                set_z_flag( res.0 == 0);
-                set_n_flag(false);
             },
             Targets8::C => {
-                let res = self.c.overflowing_add(val);
-                set_h_flag((self.c & 0xF) + (val & 0xF) > 0xF);
+                res = if add { self.c.overflowing_add(val) } else { self.c.overflowing_sub(val) };
+                set_h_flag(check_half_carry(self.c, val, add));
                 self.c = res.0;
-                set_z_flag( res.0 == 0);
-                set_n_flag(false);
             },
             Targets8::D => {
-                let res = self.d.overflowing_add(val);
-                set_h_flag((self.d & 0xF) + (val & 0xF) > 0xF);
+                res = if add { self.d.overflowing_add(val) } else { self.d.overflowing_sub(val) };
+                set_h_flag(check_half_carry(self.d, val, add));
                 self.d = res.0;
-                set_z_flag( res.0 == 0);
-                set_n_flag(false);
             },
             Targets8::E => {
-                let res = self.e.overflowing_add(val);
-                set_h_flag((self.e & 0xF) + (val & 0xF) > 0xF);
+                res = if add { self.e.overflowing_add(val) } else { self.e.overflowing_sub(val) };
+                set_h_flag(check_half_carry(self.e, val, add));
                 self.e = res.0;
-                set_z_flag( res.0 == 0);
-                set_n_flag(false);
             },
             Targets8::F => {
-                let res = self.f.overflowing_add(val);
-                set_h_flag((self.f & 0xF) + (val & 0xF) > 0xF);
+                res = if add { self.f.overflowing_add(val) } else { self.f.overflowing_sub(val) };
+                set_h_flag(check_half_carry(self.f, val, add));
                 self.f = res.0;
-                set_z_flag( res.0 == 0);
-                set_n_flag(false);
             },
             Targets8::H => {
-                let res = self.h.overflowing_add(val);
-                set_h_flag((self.h & 0xF) + (val & 0xF) > 0xF);
+                res = if add { self.h.overflowing_add(val) } else { self.h.overflowing_sub(val) };
+                set_h_flag(check_half_carry(self.h, val, add));
                 self.h = res.0;
-                set_z_flag( res.0 == 0);
-                set_n_flag(false);
             },
             Targets8::L => {
-                let res = self.l.overflowing_add(val);
-                set_h_flag((self.l & 0xF) + (val & 0xF) > 0xF);
+                res = if add { self.l.overflowing_add(val) } else { self.l.overflowing_sub(val) };
+                set_h_flag(check_half_carry(self.l, val, add));
                 self.l = res.0;
-                set_z_flag( res.0 == 0);
-                set_n_flag(false);
             }
+        }
+        self.z_flag(res.0 == 0);
+        set_n_flag(!add);
+    }
+
+
+    pub fn rotate_left8(&mut self, r: Targets8) {
+        match r {
+            Targets8::A => {
+                self.set_c_flag(self.a & 0xA0 == 0xA0);
+                self.a = self.a << 1;
+            },
+            Targets8::B => {
+                self.set_c_flag(self.b & 0xA0 == 0xA0);
+                self.b = self.b << 1;
+            },
+            Targets8::C => {
+                self.set_c_flag(self.c & 0xA0 == 0xA0);
+                self.c = self.c << 1;
+            },
+            Targets8::D => {
+                self.set_c_flag(self.d & 0xA0 == 0xA0);
+                self.d = self.d << 1;
+            },
+            Targets8::E => {
+                self.set_c_flag(self.e & 0xA0 == 0xA0);
+                self.e = self.e << 1;
+            },
+            Targets8::F => {
+                self.set_c_flag(self.f & 0xA0 == 0xA0);
+                self.f = self.f << 1;
+            },
+            Targets8::H => {
+                self.set_c_flag(self.h & 0xA0 == 0xA0);
+                self.h = self.h << 1;
+            },
+            Targets8::L => {
+                self.set_c_flag(self.l & 0xA0 == 0xA0);
+                self.l = self.l << 1;
+            }
+        }
+        self.set_z_flag(false);
+        self.set_n_flag(false);
+        self.set_h_flag(false);
+    }
+
+    fn check_half_carry(v1: u8, v2: u8, add: bool) -> bool {
+        if add {
+            (v1 & 0xF) + (v2 & 0xF) > 0xF
+        }  else {
+            (v1 & 0xF) - (v2 & 0xF) > 0xF
         }
     }
 

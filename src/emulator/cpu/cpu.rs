@@ -13,6 +13,7 @@ enum Flag {
 #[derive(Copy, Clone)]
 pub enum CpuState {
     Ready,
+    Wait(u32),
     M2(CycleState),
     M3(CycleState),
     M4(CycleState),
@@ -77,15 +78,43 @@ impl CPU {
         match &self.state {
             CpuState::Ready => {
                 let mut instr = memory.read(self.pc);             // fetch instruction at [PC]
-                self.pc = self.pc + 1;                                     // increment PC after fetch
+                let (cycles, length) = constants::OPCODES.get(instr).unwrap();
                 let mut cycle_state = CycleState::new();         // create new cycle state for multi-cycle instructions
                 cycle_state.instruction = instr as u16;                   // save current instruction in cycle state
-                if instr == 0xCB || (instr >= 0x01 && instr <= 0x04) {    // instr = 0xCB prefix OR 0x01 - 0x04
+                if instr == 0xCB || (instr >= 0x01 && instr <= 0x06) || instr == 0x08 {    // instr = 0xCB prefix OR 0x01 - 0x06
                     self.state = CpuState::M2(cycle_state);
                 } else if instr == 0x00 {                                 // instr = 0x00 (NOP) -- one cycle
-                    self.state = CpuState::Ready;
+                    self.state = CpuState::Wait(cycles);
+                } else if instr == 0x01 {
+                    let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
+                    self.registers.set16(Targets16::BC, d16);
+                } else if instr == 0x02 {
+                    memory.write(self.registers.get16(Targets16::BC), self.registers.get8(Targets8::A));
+                } else if instr == 0x03 {
+                    self.registers.add16(Targets16::BC, 1);
+                } else if instr == 0x04 {
+                    self.registers.add8(Targets8::B, 1, true);
+                } else if instr == 0x05 {
+                    self.registers.add8(Targets8::B, 1, false);
+                } else if instr == 0x06 {
+                    self.registers.set8(Targets8::B, memory.read(self.pc + 1));
+                } else if instr == 0x07 {                                //RLCA
+                    self.registers.rotate_left8(Targets8::A);
+                } else if instr == 0x09 {
+                    let res = self.registers.get16(Targets16::HL).overflowing_add(self.registers.get16(Targets16::BC)).0;
+
                 }
+                self.pc += length;
+                self.state = CpuState::Wait(cycles);
             },
+            CpuState::Wait(x) => {
+                if *x == 1 {
+                    self.state = CpuState::Ready;
+                } else {
+                    self.stat = CpuState::Wait(*x - 1);
+                }
+            }
+            /*
             CpuState::M2(x) => {
                 let mut cycle_state = (*x).clone();
                 if x.instruction == 0xCB00 {
@@ -106,8 +135,21 @@ impl CPU {
                     self.registers.set16(Targets16::BC, val.0);
                     self.state = CpuState::Ready;
                 } else if x.instruction == 0x04 {
-                    self.registers.add8(Targets8::B, 1);
+                    self.registers.add8(Targets8::B, 1, true);
                     self.state = CpuState::Ready;
+                } else if x.instruction == 0x05 {
+                    self.registers.add8(Targets8::B, 1, false);
+                    self.state = CpuState::Ready;
+                } else if x.instruction == 0x06 {
+                    let val = memory.read(pc);
+                    self.pc = self.pc + 1;
+                    self.registers.set8(Targets8::B, val);
+                    self.state = CpuState::Ready;
+                } else if x.instruction == 0x08 {
+                    let val = memory.read(pc);
+                    self.pc = self.pc + 1;
+                    cycle_state.d16 = val;
+                    self.state = CpuState::M3(cycle_state);
                 }
             },
             CpuState::M3(x) => {
@@ -118,8 +160,28 @@ impl CPU {
                     cycle_state.d16 += (val as u16) << 8;
                     self.registers.set16(Targets16::BC, cycle_state.d16);
                     self.state = CpuState::Ready;
+                } else if x.instruction == 0x08 {
+                    let val = memory.read(pc);
+                    self.pc = self.pc + 1;
+                    cycle_state.d16 += (val as u16) << 8;
+                    self.state = CpuState::M4(cycle_state);
+                }
+            },
+            CpuState::M4(x) => {
+                let mut cycle_state = (*x).clone();
+                if x.instruction == 0x08 {
+                    memory.write(cycle_state.d16, (self.sp & 0x00FF) as u8);
+                    self.state = CpuState::M5(cycle_state);
+                }
+            },
+            CpuState::M5(x) => {
+                let mut cycle_state = (*x).clone();
+                if x.instruction == 0x08 {
+                    memory.write(cycle_state.d16 + 1, (self.sp >> 8) as u8);
+                    self.state = CpuState::Ready;
                 }
             }
+             */
             _ => {},
         }
         return self.state;
