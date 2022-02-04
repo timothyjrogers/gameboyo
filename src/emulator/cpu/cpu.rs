@@ -91,7 +91,7 @@ impl CPU {
                 } else if instr == 0x02 {
                     memory.write(self.registers.get16(Targets16::BC), self.registers.get8(Targets8::A));
                 } else if instr == 0x03 {
-                    self.registers.add16(Targets16::BC, 1);
+                    self.registers.add16(Targets16::BC, 1, true);
                 } else if instr == 0x04 {
                     self.registers.add8(Targets8::B, 1, true);
                 } else if instr == 0x05 {
@@ -100,8 +100,11 @@ impl CPU {
                     self.registers.set8(Targets8::B, memory.read(self.pc + 1));
                 } else if instr == 0x07 {                                //RLCA
                     self.registers.rotate_left8(Targets8::A);
+                } else if instr == 0x08 {
+                    let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
+                    memory.write(d16, (self.sp & 0x0FF) as u8);
+                    memory.write(d16 + 1, (self.sp >> 8) as u8);
                 } else if instr == 0x09 {
-                    let res = self.registers.get16(Targets16::HL).overflowing_add(self.registers.get16(Targets16::BC)).0;
 
                 }
                 self.pc += length;

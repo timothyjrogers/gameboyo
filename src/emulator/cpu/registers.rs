@@ -217,6 +217,42 @@ impl Registers {
         set_n_flag(!add);
     }
 
+    pub fn add16(&mut self, rr: Targets16, val: u16, add: bool) {
+        let res;
+        match rr {
+            Targets16::AF => {
+                self.set_h_flag(self.check_half_carry(self.get8(Targets8::A), val >> 8, add));
+                let mut d16 = ((self.a as u16) << 8) + self.f;
+                let res = d16.overflowing_add(val);
+                self.a = (res.0 >> 8) as u8;
+                self.f = (res.0 & 0x00FF) as u8;
+            },
+            Targets16::BC => {
+                self.set_h_flag(self.check_half_carry(self.get8(Targets8::B), val >> 8, add));
+                let mut d16 = ((self.b as u16) << 8) + self.c;
+                let res = d16.overflowing_add(val);
+                self.b = (res.0 >> 8) as u8;
+                self.c = (res.0 & 0x00FF) as u8;
+            },
+            Targets16::DE => {
+                self.set_h_flag(self.check_half_carry(self.get8(Targets8::D), val >> 8, add));
+                let mut d16 = ((self.d as u16) << 8) + self.e;
+                let res = d16.overflowing_add(val);
+                self.d = (res.0 >> 8) as u8;
+                self.e = (res.0 & 0x00FF) as u8;
+            },
+            Targets16::HL => {
+                self.set_h_flag(self.check_half_carry(self.get8(Targets8::H), val >> 8, add));
+                let mut d16 = ((self.h as u16) << 8) + self.l;
+                let res = d16.overflowing_add(val);
+                self.h = (res.0 >> 8) as u8;
+                self.l = (res.0 & 0x00FF) as u8;
+            }
+        }
+        self.set_n_flag(!add);
+        self.set_z_flag(res.0 == 0);
+        self.set_c_flag(res.1);
+    }
 
     pub fn rotate_left8(&mut self, r: Targets8) {
         match r {
