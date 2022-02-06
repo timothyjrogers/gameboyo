@@ -81,31 +81,38 @@ impl CPU {
                 let (cycles, length) = constants::OPCODES.get(instr).unwrap();
                 let mut cycle_state = CycleState::new();         // create new cycle state for multi-cycle instructions
                 cycle_state.instruction = instr as u16;                   // save current instruction in cycle state
-                if instr == 0xCB || (instr >= 0x01 && instr <= 0x06) || instr == 0x08 {    // instr = 0xCB prefix OR 0x01 - 0x06
-                    self.state = CpuState::M2(cycle_state);
-                } else if instr == 0x00 {                                 // instr = 0x00 (NOP) -- one cycle
-                    self.state = CpuState::Wait(cycles);
-                } else if instr == 0x01 {
-                    let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                    self.registers.set16(Targets16::BC, d16);
-                } else if instr == 0x02 {
-                    memory.write(self.registers.get16(Targets16::BC), self.registers.get8(Targets8::A));
-                } else if instr == 0x03 {
-                    self.registers.add16(Targets16::BC, 1, true);
-                } else if instr == 0x04 {
-                    self.registers.add8(Targets8::B, 1, true);
-                } else if instr == 0x05 {
-                    self.registers.add8(Targets8::B, 1, false);
-                } else if instr == 0x06 {
-                    self.registers.set8(Targets8::B, memory.read(self.pc + 1));
-                } else if instr == 0x07 {                                //RLCA
-                    self.registers.rotate_left8(Targets8::A);
-                } else if instr == 0x08 {
-                    let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                    memory.write(d16, (self.sp & 0x0FF) as u8);
-                    memory.write(d16 + 1, (self.sp >> 8) as u8);
-                } else if instr == 0x09 {
+                match instr {
+                    0xCB  => self.state = CpuState::Wait(4),   //TODO PREFIX CB
+                    0x00 => self.state = CpuState::Wait(cycles), //NOP
+                    0x01 => { //LD BC,u16
+                        let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
+                        self.registers.set16(Targets16::BC, d16);
+                    },
+                    0x02 => memory.write(self.registers.get16(Targets16::BC), self.registers.get8(Targets8::A)), //LD (BC),A
+                    0x03 => self.registers.add16(Targets16::BC, 1, true), //INC BC
+                    0x04 => self.registers.add8(Targets8::B, 1, true), //INC B
+                    0x05 => self.registers.add8(Targets8::B, 1, false), //DEC B
+                    0x06 => self.registers.set8(Targets8::B, memory.read(self.pc + 1)), //LD B,u8
+                    0x07 => self.registers.rotate_left8(Targets8::A), //RLCA
+                    0x08 => { //LD (u16),SP
+                        let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
+                        memory.write(d16, (self.sp & 0x0FF) as u8);
+                        memory.write(d16 + 1, (self.sp >> 8) as u8);
+                    },
+                    0x09 => self.registers.add16(Targets16::HL, self.registers.get16(Targets16::BC), true), //ADD HL,BC
+                    0x0A => { //LD A,(BC)
+                        d8 = memory.read(self.registers.get16(Targets16::BC));
+                        self.registers.set8(Targets8::A, d8);
+                    },
+                    0x0B => self.registers.add16(Targets16::BC, 1, false), //DEC BC
+                    0x0C => self.registers.add8(Targets8::C, 1, true), //INC C
+                    0x0D => self.registers.add8(Targets8::C, 1, false), //DEC C
+                    0x0E => self.registers.set8(Targets8::C, memory.read(self.pc + 1)), //LD C,u8
+                    0x0F => self.registers.rotate_right8(Targets8::A), //RRCA
+                    0x10 => { //STOP
 
+                    }
+                    _ => ()
                 }
                 self.pc += length;
                 self.state = CpuState::Wait(cycles);
