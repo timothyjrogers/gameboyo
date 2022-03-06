@@ -1,59 +1,6 @@
 use crate::emulator::emulator::Platform;
 use crate::emulator::constants;
 
-pub struct Register {
-    high: u8,
-    low: u8,
-}
-
-pub struct Flags {
-    z: bool,
-    n: bool,
-    h: bool,
-    c: bool,
-}
-
-impl Register {
-    pub fn new(data: u16) -> Self {
-        Self {
-            high: (data >> 8) as u8,
-            low: (data & 0x00FF) as u8,
-        }
-    }
-
-    pub fn write(&mut self, data: u16) {
-        self.high = (data >> 8) as u8;
-        self.low = (data & 0x00FF) as u8;
-    }
-
-    pub fn write_high(&mut self, data: u8) {
-        self.high = data;
-    }
-
-    pub fn write_low(&mut self, data: u8) {
-        self.low = data;
-    }
-
-    pub fn read(&self) -> u16 {
-        let mut val: u16 = self.high as u16;
-        val = val << 8;
-        val += self.low as u16;
-        return val;
-    }
-
-    pub fn read_high(&self) -> u8 {
-        return self.high;
-    }
-
-    pub fn read_low(&self) -> u8 {
-        return self.low;
-    }
-
-    pub fn add(&mut self, val: u16) -> Flags {
-
-    }
-}
-
 pub struct Registers {
     a: u8,
     b: u8,
@@ -65,6 +12,7 @@ pub struct Registers {
     l: u8,
 }
 
+#[derive(Clone, Copy)]
 pub enum Targets8 {
     A,
     B,
@@ -76,11 +24,20 @@ pub enum Targets8 {
     L,
 }
 
+#[derive(Clone, Copy)]
 pub enum Targets16 {
     AF,
     BC,
     DE,
     HL,
+}
+
+#[derive(Clone, Copy)]
+pub enum Flags {
+    Z,
+    N,
+    H,
+    C,
 }
 
 impl Registers {
@@ -169,124 +126,339 @@ impl Registers {
         }
     }
 
-    pub fn add8(&mut self, r: Targets8, val: u8, add: bool) {
-        let res: (u8, bool);
-        match r {
-            Targets8::A => {
-                res = if add { self.a.overflowing_add(val) } else { self.a.overflowing_sub(val) };
-                set_h_flag(check_half_carry(self.a, val, add));
-                self.a = res.0;
-            },
-            Targets8::B => {
-                res = if add { self.b.overflowing_add(val) } else { self.b.overflowing_sub(val) };
-                set_h_flag(check_half_carry(self.b, val, add));
-                self.b = res.0;
-            },
-            Targets8::C => {
-                res = if add { self.c.overflowing_add(val) } else { self.c.overflowing_sub(val) };
-                set_h_flag(check_half_carry(self.c, val, add));
-                self.c = res.0;
-            },
-            Targets8::D => {
-                res = if add { self.d.overflowing_add(val) } else { self.d.overflowing_sub(val) };
-                set_h_flag(check_half_carry(self.d, val, add));
-                self.d = res.0;
-            },
-            Targets8::E => {
-                res = if add { self.e.overflowing_add(val) } else { self.e.overflowing_sub(val) };
-                set_h_flag(check_half_carry(self.e, val, add));
-                self.e = res.0;
-            },
-            Targets8::F => {
-                res = if add { self.f.overflowing_add(val) } else { self.f.overflowing_sub(val) };
-                set_h_flag(check_half_carry(self.f, val, add));
-                self.f = res.0;
-            },
-            Targets8::H => {
-                res = if add { self.h.overflowing_add(val) } else { self.h.overflowing_sub(val) };
-                set_h_flag(check_half_carry(self.h, val, add));
-                self.h = res.0;
-            },
-            Targets8::L => {
-                res = if add { self.l.overflowing_add(val) } else { self.l.overflowing_sub(val) };
-                set_h_flag(check_half_carry(self.l, val, add));
-                self.l = res.0;
-            }
+    //Adds two 8-bit numbers and sets flags accordingly. Returns the result rather than storing to a register.
+    pub fn add8(&mut self, val1: u8, val2: u8, flags: Vec<Flags>) -> u8 {
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_add(val1, val2) }
+        let result = val1.overflowing_add(val2);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
         }
-        self.z_flag(res.0 == 0);
-        set_n_flag(!add);
+        if flags.contains(&Flags::N) { self.unset_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+        return result.0;
     }
 
-    pub fn add16(&mut self, rr: Targets16, val: u16, add: bool) {
-        let res;
-        match rr {
-            Targets16::AF => {
-                self.set_h_flag(self.check_half_carry(self.get8(Targets8::A), val >> 8, add));
-                let mut d16 = ((self.a as u16) << 8) + self.f;
-                res = if add { d16.overflowing_add(val) } else { d16.overflowing_sub(val) };
-                self.a = (res.0 >> 8) as u8;
-                self.f = (res.0 & 0x00FF) as u8;
+    //Subtracts two 8-bit numbers and sets flags accordingly. Returns the result rather than storing to a register.
+    pub fn sub8(&mut self, val1: u8, val2: u8, flags: Vec<Flags>) -> u8 {
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_sub(val1, val2) }
+        let result = val1.overflowing_sub(val2);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if flags.contains(&Flags::N) { self.set_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+        return result.0;
+    }
+
+    //Adds an unsigned 8-bit value to a register, with overflow, and sets flags accordingly. Stores result in register r.
+    pub fn add8_val(&mut self, r: Targets8, val: u8, flags: Vec<Flags>) {
+        let mut reg = self.get8(r);
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_add(reg, val) }
+        let result = reg.overflowing_add(val);
+        self.set8(r, result.0);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if flags.contains(&Flags::N) { self.unset_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+    }
+
+    //Subtracts an 8-bit value from a register, with borrow, and sets flags accordingly. Stores result in register r.
+    pub fn sub8_val(&mut self, r: Targets8, val: u8, flags: Vec<Flags>)  {
+        let mut reg = self.get8(r);
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_sub(reg, val) }
+        let result = reg.overflowing_sub(val);
+        self.set8(r, result.0);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if flags.contains(&Flags::N) { self.set_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+    }
+
+    //Adds two 8-bit registers together, with overflow, and sets flags accordingly. Stores value in register r1.
+    pub fn add8_reg(&mut self, r1: Targets8, r2: Targets8, flags: Vec<Flags>) {
+        let mut reg1 = self.get8(r1);
+        let reg2 = self.get8(r2);
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_add(reg1, reg2) }
+        let result = reg1.overflowing_add(reg2);
+        self.set8(r1, result.0);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if flags.contains(&Flags::N) { self.unset_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+    }
+
+    //Subtracts two 8-bit registers, with borrow, and sets flags accordingly. Stores value in register r1.
+    pub fn sub8_reg(&mut self, r1: Targets8, r2: Targets8, flags: Vec<Flags>) {
+        let mut reg1 = self.get8(r1);
+        let reg2 = self.get8(r2);
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_sub(reg1, reg2) }
+        let result = reg1.overflowing_sub(reg2);
+        self.set8(r1, result.0);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if fags.contains(&Flags::N) { self.set_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+    }
+
+    //Adds two 16-bit numbers and sets flags accordingly. Returns the result rather than storing to a register.
+    pub fn add16(&mut self, val1: u16, val2: u16, flags: Vec<Flags>) -> u16 {
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_add((val1 >> 8) as u8, (val2 >> 8) as u8); }
+        let result = val1.overflowing_add(val2);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if fags.contains(&Flags::N) { self.set_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+        return result.0;
+    }
+
+    //Subtracts two 16-bit numbers and sets flags accordingly. Returns the result rather than storing to a register.
+    pub fn sub16(&mut self, val1: u16, val2: u16, flags: Vec<Flags>) -> u16 {
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_sub((val1 >> 8) as u8, (val2 >> 8) as u8); }
+        let result = val1.overflowing_sub(val2);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if fags.contains(&Flags::N) { self.set_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+        return result.0;
+    }
+
+    //Adds an unsigned 16-bit value to a register, with overflow, and sets flags accordingly. Stores result in register rr.
+    pub fn add16_val(&mut self, rr: Targets16, val: u16, flags: Vec<Flags>) {
+        let mut reg = self.get16(rr);
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_add((reg >> 8) as u8, (val >> 8) as u8); }
+        let result = reg.overflowing_add(val);
+        self.set16(rr, result.0);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if fags.contains(&Flags::N) { self.set_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+    }
+
+    //Subtracts an 16-bit value from a register, with borrow, and sets flags accordingly. Stores result in register rr.
+    pub fn sub16_val(&mut self, rr: Targets16, val: u16, flags: Vec<Flags>)  {
+        let mut reg = self.get16(rr);
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_sub((reg >> 8) as u8, (val >> 8) as u8); }
+        let result = reg.overflowing_sub(val);
+        self.set16(rr, result.0);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if fags.contains(&Flags::N) { self.set_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+    }
+
+    //Adds an unsigned 16-bit value to a register, with overflow, and sets flags accordingly. Stores result in register rr.
+    pub fn add16_reg(&mut self, rr1: Targets16, rr2: Targets16, flags: Vec<Flags>) {
+        let mut reg1 = self.get16(rr1);
+        let reg2 = self.get16(rr2);
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_sub((reg1 >> 8) as u8, (reg2 >> 8) as u8); }
+        self.set16(rr1, result.0);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if fags.contains(&Flags::N) { self.set_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+    }
+
+    //Subtracts an 16-bit value from a register, with borrow, and sets flags accordingly. Stores result in register rr.
+    pub fn sub16_reg(&mut self, rr: Targets16, rr2: Targets16, flags: Vec<Flags>)  {
+        let mut reg1 = self.get16(rr1);
+        let reg2 = self.get16(rr2);
+        if flags.contains(&Flags::H) { self.check_and_set_half_carry_sub((reg1 >> 8) as u8, (reg2 >> 8) as u8); }
+        let result = reg1.overflowing_sub(reg2);
+        self.set16(rr1, result.0);
+        if flags.contains(&Flags::Z) {
+            if result.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        }
+        if fags.contains(&Flags::N) { self.set_flag(Flags::N) }
+        if flags.contains(&Flags::C) {
+            if result.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        }
+    }
+
+    pub fn rotate_left_circular8(&mut self, r: Targets8) {
+        match r {
+            Targets8::A => {
+                let high = (self.a & 0xA0) >> 7;
+                self.set_c_flag(high == 1);
+                self.a = self.a << 1;
+                self.a += high;
             },
-            Targets16::BC => {
-                self.set_h_flag(self.check_half_carry(self.get8(Targets8::B), val >> 8, add));
-                let mut d16 = ((self.b as u16) << 8) + self.c;
-                res = if add { d16.overflowing_add(val) } else { d16.overflowing_sub(val) };
-                self.b = (res.0 >> 8) as u8;
-                self.c = (res.0 & 0x00FF) as u8;
+            Targets8::B => {
+                let high = (self.b & 0xA0) >> 7;
+                self.set_c_flag(self.b & 0xA0 == 0xA0);
+                self.b = self.b << 1;
+                self.b += high;
             },
-            Targets16::DE => {
-                self.set_h_flag(self.check_half_carry(self.get8(Targets8::D), val >> 8, add));
-                let mut d16 = ((self.d as u16) << 8) + self.e;
-                res = if add { d16.overflowing_add(val) } else { d16.overflowing_sub(val) };
-                self.d = (res.0 >> 8) as u8;
-                self.e = (res.0 & 0x00FF) as u8;
+            Targets8::C => {
+                let high = (self.c & 0xA0) >> 7;
+                self.set_c_flag(self.c & 0xA0 == 0xA0);
+                self.c = self.c << 1;
+                self.c += high;
             },
-            Targets16::HL => {
-                self.set_h_flag(self.check_half_carry(self.get8(Targets8::H), val >> 8, add));
-                let mut d16 = ((self.h as u16) << 8) + self.l;
-                res = if add { d16.overflowing_add(val) } else { d16.overflowing_sub(val) };
-                self.h = (res.0 >> 8) as u8;
-                self.l = (res.0 & 0x00FF) as u8;
+            Targets8::D => {
+                let high = (self.d & 0xA0) >> 7;
+                self.set_c_flag(self.d & 0xA0 == 0xA0);
+                self.d = self.d << 1;
+                self.d += high;
+            },
+            Targets8::E => {
+                let high = (self.e & 0xA0) >> 7;
+                self.set_c_flag(self.e & 0xA0 == 0xA0);
+                self.e = self.e << 1;
+                self.e += high;
+            },
+            Targets8::F => {
+                let high = (self.f & 0xA0) >> 7;
+                self.set_c_flag(self.f & 0xA0 == 0xA0);
+                self.f = self.f << 1;
+                self.f += high;
+            },
+            Targets8::H => {
+                let high = (self.h & 0xA0) >> 7;
+                self.set_c_flag(self.h & 0xA0 == 0xA0);
+                self.h = self.h << 1;
+                self.h += high;
+            },
+            Targets8::L => {
+                let high = (self.l & 0xA0) >> 7;
+                self.set_c_flag(self.l & 0xA0 == 0xA0);
+                self.l = self.l << 1;
+                self.l += high;
             }
         }
-        self.set_n_flag(!add);
-        self.set_z_flag(res.0 == 0);
-        self.set_c_flag(res.1);
+        self.set_z_flag(false);
+        self.set_n_flag(false);
+        self.set_h_flag(false);
     }
 
     pub fn rotate_left8(&mut self, r: Targets8) {
+        let cur_c = self.get_c_flag();
         match r {
             Targets8::A => {
                 self.set_c_flag(self.a & 0xA0 == 0xA0);
                 self.a = self.a << 1;
+                self.a += cur_c;
             },
             Targets8::B => {
                 self.set_c_flag(self.b & 0xA0 == 0xA0);
                 self.b = self.b << 1;
+                self.b += cur_c;
             },
             Targets8::C => {
                 self.set_c_flag(self.c & 0xA0 == 0xA0);
                 self.c = self.c << 1;
+                self.c += cur_c;
             },
             Targets8::D => {
                 self.set_c_flag(self.d & 0xA0 == 0xA0);
                 self.d = self.d << 1;
+                self.d += cur_c;
             },
             Targets8::E => {
                 self.set_c_flag(self.e & 0xA0 == 0xA0);
                 self.e = self.e << 1;
+                self.e += cur_c;
             },
             Targets8::F => {
                 self.set_c_flag(self.f & 0xA0 == 0xA0);
                 self.f = self.f << 1;
+                self.f += cur_c;
             },
             Targets8::H => {
                 self.set_c_flag(self.h & 0xA0 == 0xA0);
                 self.h = self.h << 1;
+                self.h += cur_c;
             },
             Targets8::L => {
                 self.set_c_flag(self.l & 0xA0 == 0xA0);
                 self.l = self.l << 1;
+                self.l += cur_c;
+            }
+        }
+        self.set_z_flag(false);
+        self.set_n_flag(false);
+        self.set_h_flag(false);
+    }
+
+    pub fn rotate_right_circular8(&mut self, r: Targets8) {
+        match r {
+            Targets8::A => {
+                let low = self.a & 0x01;
+                self.set_c_flag(self.a & 0x01 == 0x01);
+                self.a = self.a >> 1;
+                self.a += low << 7;
+            },
+            Targets8::B => {
+                let low = self.b & 0x01;
+                self.set_c_flag(self.b & 0x01 == 0x01);
+                self.b = self.b >> 1;
+                self.b += low << 7;
+            },
+            Targets8::C => {
+                let low = self.c & 0x01;
+                self.set_c_flag(self.c & 0x01 == 0x01);
+                self.c = self.c >> 1;
+                self.c += low << 7;
+            },
+            Targets8::D => {
+                let low = self.d & 0x01;
+                self.set_c_flag(self.d & 0x01 == 0x01);
+                self.d = self.d >> 1;
+                self.d += low << 7;
+            },
+            Targets8::E => {
+                let low = self.e & 0x01;
+                self.set_c_flag(self.e & 0x01 == 0x01);
+                self.e = self.e >> 1;
+                self.e += low << 7;
+            },
+            Targets8::F => {
+                let low = self.f & 0x01;
+                self.set_c_flag(self.f & 0x01 == 0x01);
+                self.f = self.f >> 1;
+                self.f += low << 7;
+            },
+            Targets8::H => {
+                let low = self.h & 0x01;
+                self.set_c_flag(self.h & 0x01 == 0x01);
+                self.h = self.h >> 1;
+                self.h += low << 7;
+            },
+            Targets8::L => {
+                let low = self.l & 0x01;
+                self.set_c_flag(self.l & 0x01 == 0x01);
+                self.l = self.l >> 1;
+                self.l += low << 7;
             }
         }
         self.set_z_flag(false);
@@ -295,38 +467,47 @@ impl Registers {
     }
 
     pub fn rotate_right8(&mut self, r: Targets8) {
+        let cur_c = self.get_c_flag();
         match r {
             Targets8::A => {
                 self.set_c_flag(self.a & 0x01 == 0x01);
                 self.a = self.a >> 1;
+                self.a += cur_c << 7;
             },
             Targets8::B => {
                 self.set_c_flag(self.b & 0x01 == 0x01);
                 self.b = self.b >> 1;
+                self.b += cur_c << 7;
             },
             Targets8::C => {
                 self.set_c_flag(self.c & 0x01 == 0x01);
                 self.c = self.c >> 1;
+                self.c += cur_c << 7;
             },
             Targets8::D => {
                 self.set_c_flag(self.d & 0x01 == 0x01);
                 self.d = self.d >> 1;
+                self.d += cur_c << 7;
             },
             Targets8::E => {
                 self.set_c_flag(self.e & 0x01 == 0x01);
                 self.e = self.e >> 1;
+                self.e += cur_c << 7;
             },
             Targets8::F => {
                 self.set_c_flag(self.f & 0x01 == 0x01);
                 self.f = self.f >> 1;
+                self.f += cur_c << 7;
             },
             Targets8::H => {
                 self.set_c_flag(self.h & 0x01 == 0x01);
                 self.h = self.h >> 1;
+                self.h += cur_c << 7;
             },
             Targets8::L => {
                 self.set_c_flag(self.l & 0x01 == 0x01);
                 self.l = self.l >> 1;
+                self.l += cur_c << 7;
             }
         }
         self.set_z_flag(false);
@@ -334,43 +515,195 @@ impl Registers {
         self.set_h_flag(false);
     }
 
-    fn check_half_carry(v1: u8, v2: u8, add: bool) -> bool {
-        if add {
-            (v1 & 0xF) + (v2 & 0xF) > 0xF
-        }  else {
-            (v1 & 0xF) - (v2 & 0xF) > 0xF
+    pub fn adc_val(&mut self, reg: Targets8, val: u8) {
+        let mut set_h = self.check_half_carry_add(self.get8(reg), val);
+        let mut res = self.get8(reg).overflowing_add(val);
+        let mut set_c = res.1;
+        if self.get_flag(Flags::C) {
+            if self.check_half_carry_add(res.0, 1) { set_h = true }
+            res = res.0.overflowing_add(1);
+            if res.1 { set_c = true }
+        }
+        if res.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        if set_h { self.set_flag(Flags::H) } else { self.unset_flag(Flags::H) }
+        if set_c { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        self.unset_flag(Flags::N);
+        self.set8(reg, res.0);
+    }
+
+    pub fn adc_reg(&mut self, r1: Targets8, r2: Targets8) {
+        let reg1 = self.get8(r1);
+        let reg2 = self.get8(r2);
+        let mut set_h = self.check_half_carry_add(reg1, reg2);
+        let mut res = reg1.overflowing_add(reg2);
+        let mut set_c = res.1;
+        if self.get_flag(Flags::C) {
+            if self.check_half_carry_add(res.0, 1) { set_h = true }
+            res = res.0.overflowing_add(1);
+            if res.1 { set_c = true }
+        }
+        if res.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        if set_h { self.set_flag(Flags::H) } else { self.unset_flag(Flags::H) }
+        if set_c { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        self.unset_flag(Flags::N);
+        self.set8(r1, res.0);
+    }
+
+    pub fn sbc_val(&mut self, reg: Targets8, val: u8) {
+        let mut set_h = self.check_half_carry_sub(self.get8(reg), val);
+        let mut res = self.get8(reg).overflowing_sub(val);
+        let mut set_c = res.1;
+        if self.get_flag(Flags::C) {
+            if self.check_half_carry_sub(res.0, 1) { set_h = true }
+            res = res.0.overflowing_sub(1);
+            if res.1 { set_c = true }
+        }
+        if res.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        if set_h { self.set_flag(Flags::H) } else { self.unset_flag(Flags::H) }
+        if set_c { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        self.set_flag(Flags::N);
+        self.set8(reg, res.0);
+    }
+
+    pub fn sbc_reg(&mut self, r1: Targets8, r2: Targets8) {
+        let reg1 = self.get8(r1);
+        let reg2 = self.get8(r2);
+        let mut set_h = self.check_half_carry_sub(reg1, reg2);
+        let mut res = reg1.overflowing_sub(reg2);
+        let mut set_c = res.1;
+        if self.get_flag(Flags::C) {
+            if self.check_half_carry_sub(res.0, 1) { set_h = true }
+            res = res.0.overflowing_sub(1);
+            if res.1 { set_c = true }
+        }
+        if res.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        if set_h { self.set_flag(Flags::H) } else { self.unset_flag(Flags::H) }
+        if set_c { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        self.set_flag(Flags::N);
+        self.set8(r1, res.0);
+    }
+
+    pub fn and8_reg(&mut self, r1: Targets8, r2: Targets8) {
+        let reg1 = self.get8(r1);
+        let reg2 = self.get8(r2);
+        let res = reg1 & reg2;
+        self.set8(r1, res);
+        if res == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        self.set_flag(Flags::H);
+        self.unset_flag(Flags::C);
+        self.unset_flag(Flags::N)
+    }
+
+    pub fn and8_val(&mut self, reg: Targets8, val: u8) {
+        let res = self.get8(reg) & val;
+        self.set8(reg, res);
+        if res == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        self.set_flag(Flags::H);
+        self.unset_flag(Flags::C);
+        self.unset_flag(Flags::N)
+    }
+
+    pub fn xor8_reg(&mut self, r1: Targets8, r2: Targets8) {
+        let reg1 = self.get8(r1);
+        let reg2 = self.get8(r2);
+        let res = reg1 ^ reg2;
+        self.set8(r1, res);
+        if res == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        self.unset_flag(Flags::H);
+        self.unset_flag(Flags::C);
+        self.unset_flag(Flags::N)
+    }
+
+    pub fn xor8_val(&mut self, reg: Targets8, val: u8) {
+        let res = self.get8(reg) ^ val;
+        self.set8(reg, res);
+        if res == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        self.unset_flag(Flags::H);
+        self.unset_flag(Flags::C);
+        self.unset_flag(Flags::N)
+    }
+
+    pub fn or8_reg(&mut self, r1: Targets8, r2: Targets8) {
+        let reg1 = self.get8(r1);
+        let reg2 = self.get8(r2);
+        let res = reg1 | reg2;
+        self.set8(r1, res);
+        if res == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        self.unset_flag(Flags::H);
+        self.unset_flag(Flags::C);
+        self.unset_flag(Flags::N)
+    }
+
+    pub fn or8_val(&mut self, reg: Targets8, val: u8) {
+        let res = self.get8(reg) | val);
+        self.set8(reg, res);
+        if res == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        self.unset_flag(Flags::H);
+        self.unset_flag(Flags::C);
+        self.unset_flag(Flags::N)
+    }
+
+    pub fn cp8_reg(&mut self, r1: Targets8, r2: Targets8) {
+        let reg1 = self.get8(r1);
+        let reg2 = self.get8(r2);
+        self.check_and_set_half_carry_sub(reg1, reg2);
+        let res = reg1.overflowing_sub(reg2);
+        if res.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        if res.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        self.set_flag(Flags::N)
+    }
+
+    pub fn cp8_val(&mut self, reg: Targets8, val: u8) {
+        self.check_and_set_half_carry_sub(self.get8(reg), val);
+        let res = self.get8(reg).overflowing_sub(val);
+        if res.0 == 0 { self.set_flag(Flags::Z) } else { self.unset_flag(Flags::Z) }
+        if res.1 { self.set_flag(Flags::C) } else { self.unset_flag(Flags::C) }
+        self.set_flag(Flags::N)
+    }
+
+    fn check_half_carry_add(&mut self, v1: u8, v2: u8) -> bool {
+        (v1 & 0xF) + (v2 & 0xF) > 0xF
+    }
+
+    fn check_and_set_half_carry_add(&mut self, v1: u8, v2: u8) {
+        if (v1 & 0xF) + (v2 & 0xF) > 0xF { self.set_flag(Flags::H) } else { self.unset_flag(Flags::H) }
+    }
+
+    fn check_half_carry_sub(&mut self, v1: u8, v2: u8) -> bool {
+        (v1 & 0xF) - (v2 & 0xF) > 0xF
+    }
+
+    fn check_and_set_half_carry_sub(&mut self, v1: u8, v2: u8) {
+        if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.set_flag(Flags::H) } else { self.unset_flag(Flags::H) }
+    }
+
+    //Set individual flag bit
+    pub fn set_flag(&mut self, flag: Flags) {
+        match flag {
+            Flags::Z => self.f = self.f | 0b10000000,
+            Flags::N => self.f = self.f | 0b01000000,
+            Flags::H => self.f = self.f | 0b00100000,
+            Flags::C => self.f = self.f | 0b00010000,
         }
     }
 
-    fn set_z_flag(&mut self, set: bool) {
-        if set {
-            self.f = self.f | 0b10000000;
-        } else {
-            self.f = self.f & 0b01111111;
+    //Unset individual flag bit
+    pub fn unset_flag(&mut self, flag: Flags) {
+        match flag {
+            Flags::Z => self.f = self.f & 0b01111111,
+            Flags::N => self.f = self.f & 0b10111111,
+            Flags::H => self.f = self.f & 0b11011111,
+            Flags::C => self.f = self.f & 0b11101111,
         }
     }
 
-    fn set_n_flag(&mut self, set: bool) {
-        if set {
-            self.f = self.f | 0b01000000;
-        } else {
-            self.f = self.f & 0b10111111;
-        }
-    }
-
-    fn set_h_flag(&mut self, set: bool) {
-        if set {
-            self.f = self.f | 0b00100000;
-        } else {
-            self.f = self.f & 0b11011111;
-        }
-    }
-
-    fn set_c_flag(&mut self, set: bool) {
-        if set {
-            self.f = self.f | 0b00010000;
-        } else {
-            self.f = self.f & 0b11101111;
+    //Returns true if individual flag bit is set, else false
+    pub fn get_flag(&self, flag: Flags) -> bool {
+        match flag {
+            Flags::Z => (self.f & 0b10000000) >> 7 == 1,
+            Flags::N => (self.f & 0b01000000) >> 6 == 1,
+            Flags::H => (self.f & 0b00100000) >> 5 == 1,
+            Flags::C => (self.f & 0b00010000) >> 4 == 1,
         }
     }
 }
