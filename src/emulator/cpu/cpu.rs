@@ -176,14 +176,8 @@ impl CPU {
                         self.alu16_dec(Targets16::HL);
                     },
                     0x33 => self.sp = self.sp.overflowing_add(1).0,                                                         //INC SP
-                    0x34 => {                                                                                                   //INC (HL)
-                        let d8 = self.registers.add8(memory.read(self.registers.get16(Targets16::HL)), 1, vec![Flags::Z, Flags::N, Flags::H]);
-                        memory.write(self.registers.get16(Targets16::HL), d8);
-                    },
-                    0x35 => {                                                                                                   //DEC (HL)
-                        let d8 = self.registers.sub8(memory.read(self.registers.get16(Targets16::HL)), 1, vec![Flags::Z, Flags::N, Flags::H]);
-                        memory.write(self.registers.get16(Targets16::HL), d8);
-                    },
+                    0x34 => self.alu8_inci(memory, Targets16::HL),                                                         //INC (HL)
+                    0x35 => self.alu8_deci(memory, Targets16::HL),                                                         //DEC (HL)
                     0x36 => self.lsm8_sti_imm(memory, Targets16::HL),                                                    //LD (HL), u8
                     0x37 => {                                                                                                   //SCF
                         self.registers.set_flag(Flags::C);
@@ -1103,7 +1097,13 @@ impl CPU {
         16-bit arithmetic / logic
      */
     fn alu16_inc(&mut self, register: Targets16) {
-        self.registers.add16_val(register, 1, vec![]);
+        //self.registers.add16_val(register, 1, vec![]);
+        let val = self.registers.get16(register);
+        let res = val.overflowing_add(1);
+        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        if (val & 0xF) + 1  > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.set8(register, res.0);
     }
 
     fn alu16_dec(&mut self, register: Targets16) {
