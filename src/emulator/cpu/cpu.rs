@@ -1242,8 +1242,10 @@ impl CPU {
     fn rsb8_sla(&mut self, register: Targets8) {
         let val = self.registers.get8(register);
         let carry = (val & 0xA0) >> 7;
+        let low = val & 0x1;
         if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let res = val << 1;
+        let mut res = val << 1;
+        if low == 1 { res = res | 0x1 } else { res = res & 0xF8 }
         self.registers.set8(register, res);
     }
 
@@ -1252,8 +1254,10 @@ impl CPU {
         let addr = self.registers.get16(pair);
         let val = memory.read(addr);
         let carry = (val & 0xA0) >> 7;
+        let low = val & 0x1;
         if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let res = val << 1;
+        let mut res = val << 1;
+        if low == 1 { res = res | 0x1 } else { res = res & 0xF8 }
         memory.write(addr, res);
     }
 
@@ -1261,8 +1265,10 @@ impl CPU {
     fn rsb8_sra(&mut self, register: Targets8) {
         let val = self.registers.get8(register);
         let carry = val & 0x01;
+        let high = val & 0xA0;
         if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let res = val >> 1;
+        let mut res = val >> 1;
+        if high == 0xA0 { res = res | 0xA0 } else { res = res & 0x7F }
         self.registers.set8(register, res);
     }
 
@@ -1271,8 +1277,10 @@ impl CPU {
         let addr = self.registers.get16(pair);
         let val = memory.read(addr);
         let carry = val & 0x01;
+        let high = val & 0xA0;
         if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let res = val >> 1;
+        let mut res = val >> 1;
+        if high == 0xA0 { res = res | 0xA0 } else { res = res & 0x7F }
         memory.write(addr, res);
     }
 
@@ -1295,16 +1303,83 @@ impl CPU {
         memory.write(addr, res);
     }
 
-    //Test u3 in r, set Z if bit not set
+    //Logical shift right R
+    fn rsb8_srl(&mut self, register: Targets8) {
+        let val = self.registers.get8(register);
+        let carry = val & 0x01;
+        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        let mut res = val >> 1;
+        self.registers.set8(register, res);
+    }
+
+    //Logical shift right (RR)
+    fn rsb8_srli(&mut self, memory: &mut Memory, pair: Targets16) {
+        let addr = self.registers.get16(pair);
+        let val = memory.read(addr);
+        let carry = val & 0x01;
+        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        let mut res = val >> 1;
+        memory.write(addr, res);
+    }
+
+    //Test u3 in R, set Z if bit not set
     fn rsb8_bit(&mut self, bit: u8, register: Targets8) {
         if bit > 7 { return }
         let val = self.registers.get8(register);
         let set = (val >> bit) & 0x1;
-        if set { self.registers.unset(Flags::Z) } else { self.registers.set(Flags::Z) }
-        self.registers.unset(Flags::N);
-        self.registers.set(Flags::H);
+        if set { self.registers.unset_flag(Flags::Z) } else { self.registers.set_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.set_flag(Flags::H);
     }
 
+    //Test u3 in (RR), set Z if bit not set
+    fn rsb8_biti(&mut self, memory: &mut Memory, bit: u8, pair: Targets16) {
+        if bit > 7 { return }
+        let addr = self.registers.get16(pair);
+        let val = memory.read(addr);
+        let set = (val >> bit) & 0x1;
+        if set { self.registers.unset_flag(Flags::Z) } else { self.registers.set_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.set_flag(Flags::H);
+    }
+
+    //Set bit position in R to 0
+    fn rsb8_res(&mut self, bit: u8, register: Targets8) {
+        if bit > 7 { return }
+        let mut mask = 0xFF ^ (0x1 << bit);
+        let val = self.registers.get8(register);
+        let res = val & mask;
+        self.registers.set8(register, res);
+    }
+
+    //Set bit position in (RR) to 0
+    fn rsb8_resi(&mut self, memory: &mut Memory, bit: u8, pair: Targets16) {
+        if bit > 7 { return }
+        let addr = self.registers.get16(pair);
+        let mut mask = 0xFF ^ (0x1 << bit);
+        let val = memory.read(addr);
+        let res = val & mask;
+        memory.write(addr, res);
+    }
+
+    //Set bit position in R to 1
+    fn rsb8_set(&mut self, bit: u8, register: Targets8) {
+        if bit > 7 { return }
+        let mut mask = 0x1 << bit;
+        let val = self.registers.get8(register);
+        let res = val | mask;
+        self.registers.set8(register, res);
+    }
+
+    //Set bit position in  to 1
+    fn rsb8_seti(&mut self, memory: &mut Memory, bit: u8, pair: Targets16) {
+        if bit > 7 { return }
+        let addr = self.registers.get16(pair);
+        let mut mask = 0x1 << bit;
+        let val = memory.read(addr);
+        let res = val | mask;
+        memory.write(addr, res);
+    }
 
 
     /*
