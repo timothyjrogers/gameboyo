@@ -84,18 +84,15 @@ impl CPU {
                     0x04 => self.alu8_inc(Targets8::B),                                                                    //INC B
                     0x05 => self.alu8_dec(Targets8::B),                                                                    //DEC B
                     0x06 => self.lsm8_ld(memory, Targets8::B),                                                             //LD B,u8
-                    0x07 => self.registers.rotate_left_circular8(Targets8::A),                                                 //RLCA
-                    0x08 => {                                                                                                     //LD (u16),SP TODO
-                        self.lsm8_ldi_imm(memory,(self.sp & 0x0FF) as u8);
-                        self.lsm8_ldi_imm(memory,(self.sp >> 8) as u8);
-                    },
-                    0x09 => self.registers.add16_reg(Targets16::HL, Targets16::BC, vec![Flags::N, Flags::H, Flags::C]),     //ADD HL,BC
-                    0x0A => self.lsm8_ldi(memory, Targets8::A,Targets16::BC),                                     //LD A,(BC)
+                    0x07 => self.rsb8_rlca(),                                                                                     //RLCA
+                    0x08 => self.lsm16_st_sp(memory),                                                                            //LD (u16),SP
+                    0x09 => self.alu16_add(Targets16::HL, Targets16::BC),                                             //ADD HL,BC
+                    0x0A => self.lsm8_ldi(memory, Targets8::A,Targets16::BC),                                    //LD A,(BC)
                     0x0B => self.alu16_dec(Targets16::BC),                                                                //DEC BC
                     0x0C => self.alu8_inc(Targets8::C),                                                                   //INC C
                     0x0D => self.alu8_dec(Targets8::C),                                                                   //DEC C
                     0x0E => self.lsm8_ld(memory, Targets8::C),                                                            //LD C,u8
-                    0x0F => self.registers.rotate_right_circular8(Targets8::A),                                               //RRCA
+                    0x0F => self.rsb8_rrca(),                                                                                    //RRCA
                     0x10 => {                                                                                                    //TODO STOP
                         self.state = CpuState::Wait(4);
                     },
@@ -105,25 +102,16 @@ impl CPU {
                     0x14 => self.alu8_inc(Targets8::D),                                                                   //INC D
                     0x15 => self.alu8_dec(Targets8::D),                                                                   //DEC D
                     0x16 => self.lsm8_ld(memory, Targets8::D),                                                            //LD D,u8
-                    0x17 =>self.registers.rotate_left8(Targets8::A),                                                          //RLA
-                    0x18 => {                                                                                                    //JR i8
-                        let e8 = memory.read(self.pc + 1) as i8;
-                        self.pc += e8;
-                    },
-                    0x19 => self.registers.add16_reg(Targets16::HL, Targets16::DE, vec![Flags::N, Flags::H, Flags::C]), //ADD HL,DE
+                    0x17 => self.rsb8_rla(),                                                                                     //RLA
+                    0x18 => cycles += self.jr(memory, vec![]),                                                          //JR i8
+                    0x19 => self.alu16_add(Targets16::HL, Targets16::DE), //ADD HL,DE
                     0x1A => self.lsm8_ldi(memory, Targets8::A, Targets16::DE),                                   //LD A,(DE)
                     0x1B => self.alu16_dec(Targets16::DE),                                                               //DEC DE
                     0x1C => self.alu8_inc(Targets8::E),                                                                  //INC E
                     0x1D => self.alu8_dec(Targets8::E),                                                                  //DEC E
                     0x1E => self.lsm8_ld(memory, Targets8::E),                                                           //LD E,u8
-                    0x1F => self.registers.rotate_right8(Targets8::A),                                                       //RRA
-                    0x20 => {                                                                                                   //JR NZ,e8
-                        if self.registers.get_flag(Flags::N) && self.registers.get_flag(Flags::Z) {
-                            cycles += 4;
-                            let e8 = memory.read(self.pc + 1) as i8;
-                            self.pc += e8;
-                        }
-                    },
+                    0x1F => self.rsb8_rra(),                                                                                    //RRA
+                    0x20 => cycles += self.jr(memory, vec![Flags::N, Flags::Z]),                                       //JR NZ,e8
                     0x21 => self.lsm16_ld(memory, Targets16::HL),                                                        //LD HL,u16
                     0x22 => {                                                                                                   //LD (HL+), A
                         self.lsm8_sti(memory, Targets16::HL, Targets8::A);
@@ -133,27 +121,9 @@ impl CPU {
                     0x24 => self.alu8_inc(Targets8::H),                                                                  //INC H
                     0x25 => self.alu8_dec(Targets8::H),                                                                  //DEC H
                     0x26 => self.lsm8_ld(memory, Targets8::H),                                                           //LD H,u8
-                    0x27 => {                                                                                                   //DAA
-                        let mut adjustment = 0;
-                        if self.registers.get_h_flag() == 1 || (self.registers.get_n_flag() == 0 && (self.registers.get8(Targets8::A) > 9)) {
-                            adjustment |= 0x6;
-                        }
-                        if self.registers.get_c_flag() == 1 || (self.registers.get_n_flag() == 0 && (self.registers.get8(Targets8::A) > 0x99)) {
-                            adjustment |= 0x60;
-                            self.registers.set_c_flag(true);
-                        }
-                        if self.registers.get_n_flag() == 1 { self.registers.set8(Targets8::A, (self.registers.get8(Targets8::A) + adjustment) & 0xFF) } else { self.registers.set8(Targets8::A, (self.registers.get8(Targets8::A) - adjustment) & 0xFF) }
-                        if self.registers.get8(Targets8::A) == 0 { self.registers.set_z_flag(true) } else { self.registers.set_z_flag(false) }
-                        self.registers.set_h_flag(false);
-                    },
-                    0x28 => {                                                                                                   //JR Z,e8
-                        if self.registers.get_flag(Flags::Z) {
-                            cycles += 4;
-                            let e8 = memory.read(self.pc + 1) as i8;
-                            self.pc += e8;
-                        }
-                    },
-                    0x29 => self.registers.add16_reg(Targets16::HL, Targets16::HL, vec![Flags::N, Flags::H, Flags::C]),  //ADD HL,HL
+                    0x27 => self.alu8_daa(),                                                                                    //DAA
+                    0x28 => cycles += self.jr(memory, vec![Flags::Z]),                                                 //JR Z,e8
+                    0x29 => self.alu16_add(Targets16::HL, Targets16::HL),  //ADD HL,HL
                     0x2A => {                                                                                                   //LD A, (HL+)
                         self.lsm8_ldi(memory, Targets8::A, Targets16::HL);
                         self.alu16_inc(Targets16::HL);
@@ -162,14 +132,8 @@ impl CPU {
                     0x2C => self.alu8_inc(Targets8::L),                                                                  //INC L
                     0x2D => self.alu8_dec(Targets::L),                                                                   //DEC L
                     0x2E => self.lsm8_ld(memory, Targets8::L),                                                           //LD L,u8
-                    0x2F => self.registers.set8(Targets8::A, self.registers.get8(Targets8::A) ^ 0xFF),
-                    0x30 => {                                                                                                   //JR NC,e8
-                        if self.registers.get_flag(Flags::N) && self.registers.get_flag(Flags::C) {
-                            cycles += 4;
-                            let e8 = memory.read(self.pc + 1) as i8;
-                            self.pc += e8;
-                        }
-                    },
+                    0x2F => self.alu8_cpl(),                                                                                    //CPL
+                    0x30 => cycles += self.jr(memory, vec![Flags::N, Flags::C]),                                       //JR NC,e8
                     0x31 => self.sp = self.fetch_u16_immediate(memory),                                                         //LD SP,u16 TODO
                     0x32 => {                                                                                                   //LD (HL-), A
                         self.lsm8_sti(memory, Targets16::HL, Targets8::A);
@@ -179,30 +143,18 @@ impl CPU {
                     0x34 => self.alu8_inci(memory, Targets16::HL),                                                         //INC (HL)
                     0x35 => self.alu8_deci(memory, Targets16::HL),                                                         //DEC (HL)
                     0x36 => self.lsm8_sti_imm(memory, Targets16::HL),                                                    //LD (HL), u8
-                    0x37 => {                                                                                                   //SCF
-                        self.registers.set_flag(Flags::C);
-                        self.registers.unset_flag(Flags::N);
-                        self.registers.unset_flag(Flags::H);
-                    },
-                    0x38 => {                                                                                                   //JR C,e8
-                        if self.registers.get_flag(Flags::C) {
-                            cycles += 4;
-                            let e8 = memory.read(self.pc + 1) as i8;
-                            self.pc += e8;
-                        }
-                    },
-                    0x39 => {                                                                                                   //ADD HL,SP
-                        self.registers.add16_val(Targets16::HL, self.sp, vec![Flags::N, Flags::H, Flags::C]);
-                    },
+                    0x37 => self.alu8_scf(),                                                                                   //SCF
+                    0x38 => cycles += self.jr(memory, vec![Flags::C]),                                                 //JR C,e8
+                    0x39 => self.alu16_add_rr_sp(Targets16::HL),                                                          //ADD HL,SP TODO
                     0x3A => {                                                                                                   //LD A, (HL-)
                         self.lsm8_ldi(memory, Targets8::A, Targets16::HL);
                         self.alu16_dec(Targets16::HL);
                     },
-                    0x3B => self.sp = self.sp.overflowing_sub(1).0,
+                    0x3B => self.sp = self.sp.overflowing_sub(1).0,                                                         //DEC SP
                     0x3C => self.alu8_inc(Targets8::A),                                                                  //INC A
                     0x3D => self.alu8_dec(Targets8::A),                                                                  //DEC A
                     0x3E => self.lsm8_ld(memory, Targets8::A),                                                           //LD A,u8
-                    0x3F => if self.registers.get_flag(Flags::C) { self.registers.unset_flag(Flags::C) } else { self.registers.set_flag(Flags::C) }, //CCF
+                    0x3F => self.alu8_ccf(),                                                                                    //CCF
                     0x40 => self.lsm8_mv(Targets8::B, Targets8::B),                                                     //LD B, B
                     0x41 => self.lsm8_mv(Targets8::B, Targets8::C),                                                     //LD B, C
                     0x42 => self.lsm8_mv(Targets8::B, Targets8::D),                                                     //LD B, D
@@ -449,10 +401,7 @@ impl CPU {
                     0xE5 => self.lsm16_push(memory, Targets16::HL),                                                      //PUSH HL
                     0xE6 => self.alu8_and_imm(memory, Targets8::A),                                                      //AND A, u8
                     0xE7 => update_pc = self.rst(memory, 0x20),                                                             //RST 20h
-                    0xE8 => {                                                                                                   //ADD SP, i8
-                        let i8 = self.fetch_u8_immdiate(memory) as i8;
-                        self.sp = (self.sp as i16 + i8 as i16) as u16; //Does this work?
-                    },
+                    0xE8 => self.alu16_add_spimm(memory),                                                                                                   //ADD SP, i8
                     0xE9 => {                                                                                                   //JP HL
                         let d16 = self.registers.get16(Targets16::HL);
                         update_pc = false;
@@ -468,12 +417,8 @@ impl CPU {
                     0xF5 => self.lsm16_push(memory, Targets16::AF),                                                      //PUSH AF
                     0xF6 => self.alu8_or_imm(memory, Targets8::A),                                                       //OR A, u8
                     0xF7 => update_pc = self.rst(memory, 0x30),                                                             //RST 30h
-                    0xF8 => {                                                                                                   //LD HL, SP+i8
-                        let i8 = self.fetch_u8_immdiate(memory) as i8;
-                        let sp = (self.sp as i16 + i8 as i16) as u16; //Does this work?
-                        self.registers.set16(Targets16::HL, sp);
-                    },
-                    0xF9 => self.sp = self.registers.get16(Targets16::HL),                                                   //LD SP, HL TODO
+                    0xF8 => self.alu16_ld_spimm(memory, Targets16::HL),                                                    //LD HL, SP+i8
+                    0xF9 => self.sp = self.registers.get16(Targets16::HL),                                                   //LD SP, HL
                     0xFA => self.lsm8_ldi_imm(memory,Targets8::A),                                                       //LD A, (u16)
                     0xFB => self.IME = 1,                                                                                       //EI (Enable interrupts) TODO
                     0xFE => self.alu8_cp_imm(memory, Targets8::A),                                                       //CP A, u8
@@ -679,6 +624,13 @@ impl CPU {
         let val = low + (high << 8);
         self.registers.set16(register, val);
         self.sp = self.sp + 2;
+    }
+
+    //store SP
+    fn lsm16_st_sp(mut self, memory: &mut Memory) {
+        let addr = self.fetch_u16_immediate(memory);
+        memory.write(addr, (self.sp & 0xFF) as u8);
+        memory.write(addr + 1, (self.sp >> 8) as u8);
     }
     
     //mv RR1, RR2
@@ -1093,25 +1045,342 @@ impl CPU {
         self.registers.set_flag(Flags::N);
     }
 
+    //DAA
+    fn alu8_daa(&mut self) {
+        let mut adjustment = 0;
+        if self.registers.get_flag(Flags::H) == 1 || (self.registers.get_flag(Flags::N) == 0 && (self.registers.get8(Targets8::A) > 9)) {
+            adjustment |= 0x6;
+        }
+        if self.registers.get_flag(Flags::C) == 1 || (self.registers.get_flag(Flags::N) == 0 && (self.registers.get8(Targets8::A) > 0x99)) {
+            adjustment |= 0x60;
+            self.registers.set_flag(Flags::C);
+        }
+        if self.registers.get_flag(Flags::N) == 1 { self.registers.set8(Targets8::A, (self.registers.get8(Targets8::A) + adjustment) & 0xFF) } else { self.registers.set8(Targets8::A, (self.registers.get8(Targets8::A) - adjustment) & 0xFF) }
+        if self.registers.get8(Targets8::A) == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::H);
+    }
+
+    fn alu8_cpl(&mut self) {
+        let val = self.registers.get8(Targets8::A);
+        self.registers.set8(Targets8::A, val ^ 0xFF)
+    }
+
+    fn alu8_scf(&mut self) {
+        self.registers.set_flag(Flags::C);
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+    }
+
+    fn alu8_ccf(&mut self) {
+        if self.registers.get_flag(Flags::C) {
+            self.registers.unset_flag(Flags::C);
+        } else {
+            self.registers.set_flag(Flags::C);
+        }
+    }
+
+    /*
+        8-bit rotate/shift bits
+            * RLCA
+     */
+
+    //Left circular shift register A
+    fn rsb8_rlca(&mut self) {
+        let val = self.registers.get8(Targets::A);
+        let high = (val & 0xA0) >> 7;
+        let res = (val << 1) + high;
+        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.set8(Targets8::A, res);
+        self.registers.unset_flag(Flags::Z);
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+    }
+
+    //Left circular shift arbitrary 8-bit register
+    fn rsb8_rlc(&mut self, register: Targets8) {
+        let val = self.registers.get8(register);
+        let high = (val & 0xA0) >> 7;
+        let res = (val << 1) + high;
+        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+        self.registers.set8(register, res);
+    }
+
+    //Left circular shift value stored in memory pointed to by RR
+    fn rsb8_rlci(&mut self, pair: Targets16) {
+        let addr = self.registers.get16(pair);
+        let val = memory.read(addr);
+        let high = (val & 0xA0) >> 7;
+        let res = (val << 1) + high;
+        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+        memory.write(addr, res);
+    }
+
+    //Left shift register A through carry
+    fn rsb8_rla(&mut self) {
+        let val = self.registers.get8(Targets::A);
+        let high = (val & 0xA0) >> 7;
+        let new_low = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+        let res = (val << 1) + new_low;
+        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.set8(Targets8::A, res);
+        self.registers.unset_flag(Flags::Z);
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+    }
+
+    //Left shift arbitrary 8-bit register through carry
+    fn rsb8_rl(&mut self, register: Targets8) {
+        let val = self.registers.get8(register);
+        let high = (val & 0xA0) >> 7;
+        let new_low = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+        let res = (val << 1) + new_low;
+        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.set8(register, res);
+        if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+    }
+
+    //Left shift value stored in memory pointed to by RR through carry
+    fn rsb8_rli(&mut self, pair: Targets16) {
+        let addr = self.registers.get16(pair);
+        let val = memory.read(addr);
+        let high = (val & 0xA0) >> 7;
+        let new_low = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+        let res = (val << 1) + new_low;
+        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+        memory.write(addr, res);
+    }
+
+    //Right circular shift register A
+    fn rsb8_rrca(&mut self) {
+        let val = self.registers.get8(Targets::A);
+        let low = val & 0x01;
+        let res = (val >> 1) + (low << 7);
+        if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.unset_flag(Flags::Z);
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+        self.registers.set8(Targets8::A, res;
+    }
+
+    //Right circular shift arbitrary 8-bit register
+    fn rsb8_rrc(&mut self, register: Targets8) {
+        let val = self.registers.get8(register);
+        let low = val & 0x01;
+        let res = (val >> 1) + (low << 7);
+        if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+        self.registers.set8(Targets8::A, res;
+    }
+
+    //Right circular shift value stored in memory pointed to by RR
+    fn rsb8_rrci(&mut self, pair: Targets16) {
+        let addr = self.registers.get16(pair);
+        let val = memory.read(addr);
+        let low = val & 0x01;
+        let res = (val >> 1) + (low << 7);
+        if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+        memory.write(addr, res);
+    }
+
+    //Left shift register A through carry
+    fn rsb8_rra(&mut self) {
+        let val = self.registers.get8(Targets::A);
+        let low = val & 0x0F;
+        let new_high = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+        let res = (val >> 1) + (new_high << 7);
+        if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.set8(Targets8::A, res);
+        self.registers.unset_flag(Flags::Z);
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+    }
+
+    //Left shift arbitrary 8-bit register through carry
+    fn rsb8_rr(&mut self, register: Targets8) {
+        let val = self.registers.get8(register);
+        let low = val & 0x0F;
+        let new_high = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+        let res = (val >> 1) + (new_high << 7);
+        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.set8(register, res);
+        if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+    }
+
+    //Left shift value stored in memory pointed to by RR through carry
+    fn rsb8_rri(&mut self, pair: Targets16) {
+        let addr = self.registers.get16(pair);
+        let val = memory.read(addr);
+        let low = val & 0x0F;
+        let new_high = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+        let res = (val >> 1) + (new_high << 7);
+        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::H);
+        memory.write(addr, res);
+    }
+
+    //Arithmetic shift left R
+    fn rsb8_sla(&mut self, register: Targets8) {
+        let val = self.registers.get8(register);
+        let carry = (val & 0xA0) >> 7;
+        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        let res = val << 1;
+        self.registers.set8(register, res);
+    }
+
+    //Arithmetic shift left (RR)
+    fn rsb8_slai(&mut self, memory: &mut Memory, pair: Targets16) {
+        let addr = self.registers.get16(pair);
+        let val = memory.read(addr);
+        let carry = (val & 0xA0) >> 7;
+        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        let res = val << 1;
+        memory.write(addr, res);
+    }
+
+    //Arithmetic shift right R
+    fn rsb8_sra(&mut self, register: Targets8) {
+        let val = self.registers.get8(register);
+        let carry = val & 0x01;
+        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        let res = val >> 1;
+        self.registers.set8(register, res);
+    }
+
+    //Arithmetic shift right (RR)
+    fn rsb8_srai(&mut self, memory: &mut Memory, pair: Targets16) {
+        let addr = self.registers.get16(pair);
+        let val = memory.read(addr);
+        let carry = val & 0x01;
+        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        let res = val >> 1;
+        memory.write(addr, res);
+    }
+
+    //Swap the upper 4 bits in R with the lower four
+    fn rsb8_swap(&mut self, register: Targets8) {
+        let val = self.registers.get8(register);
+        let low = (val & 0xF0) >> 4;
+        let high = (val & 0x0F) << 4;
+        let res = high + low;
+        self.registers.set8(register, res);
+    }
+
+    //Swap the upper 4 bits in (RR) with the lower four
+    fn rsb8_swapi(&mut self, memory: &mut Memory, pair: Targets16) {
+        let addr = self.registers.get16(pair);
+        let val = memory.read(addr);
+        let low = (val & 0xF0) >> 4;
+        let high = (val & 0x0F) << 4;
+        let res = high + low;
+        memory.write(addr, res);
+    }
+
+    //Test u3 in r, set Z if bit not set
+    fn rsb8_bit(&mut self, bit: u8, register: Targets8) {
+        if bit > 7 { return }
+        let val = self.registers.get8(register);
+        let set = (val >> bit) & 0x1;
+        if set { self.registers.unset(Flags::Z) } else { self.registers.set(Flags::Z) }
+        self.registers.unset(Flags::N);
+        self.registers.set(Flags::H);
+    }
+
+
+
     /*
         16-bit arithmetic / logic
+        * INC RR
+        * DEC RR
+        * INC SP
+        * DEC SP
+        * ADD RR1, RR2
+        * ADD RR1, SP
+        * ADD SP, i8
+        * LD HL, SP+i8
      */
     fn alu16_inc(&mut self, register: Targets16) {
-        //self.registers.add16_val(register, 1, vec![]);
         let val = self.registers.get16(register);
         let res = val.overflowing_add(1);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if (val & 0xF) + 1  > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register, res.0);
+        self.registers.set16(register, res.0);
+    }
+
+    fn alu16_incsp(&mut self) {
+        let res = self.sp.overflowing_add(1);
+        self.sp = res.0;
     }
 
     fn alu16_dec(&mut self, register: Targets16) {
-        self.registers.sub16_val(register, 1, vec![])
+        let val = self.registers.get16(register);
+        let res = val.overflowing_sub(1);
+        self.registers.set16(register, res.0);
+    }
+
+    fn alu16_decsp(&mut self) {
+        let res = self.sp.overflowing_sub(1);
+        self.sp = res.0;
+    }
+
+    fn alu16_add(&mut self, pair1: Targets16, pair2: Targets16) {
+        let v1 = self.registers.get16(pair1);
+        let v2 = self.registers.get16(pair2);
+        let res = v1.overflowing_add(v2);
+        if (v1 & 0x0F00) + (v2 & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.set16(pair1, res.0);
+    }
+
+    fn alu16_add_rr_sp(&mut self, pair: Targets16) {
+        let val = self.registers.get16(pair);
+        let res = val.overflowing_add(self.sp);
+        if (val & 0x0F00) + (self.sp & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.set16(pair, res.0);
+    }
+
+    fn alu16_add_spimm(&mut self, memory: &mut Memory) {
+        let i8 = self.fetch_u8_immdiate(memory) as i8 as i16 as u16;
+        let res = self.sp.overflowing_add(i8);
+        if (self.sp & 0x0F00) + (i8 & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::Z);
+        self.sp = res.0;
+    }
+
+    fn alu16_ld_spimm(&mut self, memory: &mut Memory, pair: Targets16) {
+        let i8 = self.fetch_u8_immdiate(memory) as i8 as i16 as u16;
+        let res = self.sp.overflowing_add(i8);
+        if (self.sp & 0x0F00) + (i8 & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+        self.registers.unset_flag(Flags::N);
+        self.registers.unset_flag(Flags::Z);
+        self.registers.set16(pair, res.0);
     }
 
     /*
-        CPU Control
+        CPU Control / Misc
     */
     fn ret(&mut self, memory: &mut Memory) {
         let mut pc = memory.read(self.sp + 1) as u16;
@@ -1135,5 +1404,19 @@ impl CPU {
         self.sp -= 2;
         self.pc = addr;
         return false;
+    }
+
+    fn jr(&mut self, memory: &mut Memory, conditions: Vec<Flags>) -> u16 {
+        let mut jump = true;
+        let mut cycles = 0;
+        for condition in conditions {
+            if !self.registers.get_flag(condition) { jump = false }
+        }
+        if jump {
+            cycles += 4;
+            let e8 = memory.read(self.pc + 1) as i8;
+            self.pc = ((self.pc as u32 as i32)  + (e8 as i32)) as u16;
+        }
+        return cycles;
     }
 }
