@@ -95,7 +95,6 @@ impl Application for Gameboyo {
                   self.emulator.tick()
                 }
                 */
-                 */
             }
             Message::Goto(p) => {
                 self.current_view = p;

@@ -3,10 +3,16 @@ use crate::emulator::memory::memory::Memory;
 use crate::emulator::cpu::cpu::CPU;
 use crate::emulator::timer::timer::Timer;
 use crate::emulator::joypad::joypad::Joypad;
-use crate::emulator::video::video::VideoController;
+use crate::emulator::ppu::video::VideoController;
 use crate::emulator::cpu::registers::Interrupt;
 use crate::emulator::cpu::cpu::CpuState;
 
+
+/*
+Main Emulator struct
+Contains references to Memory, CPU, PPU, APU, Timer, and Joypad subsystems
+Accessed from application UI code to tick the configure and tick the emulator backend
+ */
 pub struct Emulator {
     memory: Memory,
     cpu: CPU,

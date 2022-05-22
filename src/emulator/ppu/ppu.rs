@@ -1,4 +1,4 @@
-pub struct VideoController {
+pub struct PPU {
     pixels: [bool; 160*144],
     LCDC: u8,
     LY: u8,
@@ -6,7 +6,7 @@ pub struct VideoController {
     STAT: u8,
 }
 
-impl VideoController {
+impl PPU {
     pub fn new() -> Self {
         Self {
             pixels: [false; 160*144],
