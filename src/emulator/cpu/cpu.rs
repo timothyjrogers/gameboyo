@@ -100,7 +100,7 @@ impl CPU {
                     0x04 => self.alu8_inc(Register8::B),                                                                    //INC B
                     0x05 => self.alu8_dec(Register8::B),                                                                    //DEC B
                     0x06 => self.lsm8_ld(cycle, memory, Register8::B),                                                             //LD B,u8
-                    0x07 => self.rsb8_rlca(),                                                                                     //RLCA
+                    0x07 => self.rsb8_rlca(),                                                                                        //RLCA
                     0x08 => self.lsm16_st_sp(memory),                                                                            //LD (u16),SP
                     0x09 => self.alu16_add(Register16::HL, Register16::BC),                                             //ADD HL,BC
                     0x0A => self.lsm8_ldi(memory, Register8::A, Register16::BC),                                    //LD A,(BC)
@@ -635,6 +635,11 @@ impl CPU {
         self.sp = self.sp + 2;
     }
 
+    //mv RR1, RR2
+    fn lsm16_mv(&mut self, register1: Register16, register2: Register16) {
+        self.registers.set16(register1, self.registers.get16(register2));
+    }
+
     //store SP
     fn lsm16_st_sp(mut self, cycle: u32, memory: &mut Memory) {
         if cycle == 8 {
@@ -647,12 +652,7 @@ impl CPU {
         memory.write(addr, (self.sp & 0xFF) as u8);
         memory.write(addr + 1, (self.sp >> 8) as u8);
     }
-    
-    //mv RR1, RR2
-    fn lsm16_mv(&mut self, register1: Register16, register2: Register16) {
-        self.registers.set16(register1, self.registers.get16(register2));
-    }
-    
+
     /*
         8-bit arithmetic / logic
         * INC R
