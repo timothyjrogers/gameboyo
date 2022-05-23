@@ -3,16 +3,16 @@ extern crate lazy_static;
 
 use std::collections::HashMap;
 
-//Screen constants
-pub const SCREEN_X_DIM: u32 = 160; //unit = pixels
-pub const SCREEN_Y_DIM: u32 = 144; //unit = pixels
-
 //Timing constants
 pub const CLOCK_HZ: f32 = 4_194_304.0;
 pub const UI_FPS: f32 = 59.7275;
 pub const FPS_MILLIS: f32 = 1.0/UI_FPS * 1000;
 pub const CYCLES_PER_FRAME: usize = ((1.0/UI_FPS) * CLOCK_HZ).floor() as usize;
 pub const CYCLE_DURATION_MILLIS: f32 = (1.0/UI_FPS)/CYCLES_PER_FRAME * 1000;
+
+//Screen constants
+pub const SCREEN_X_DIM: u32 = 160; //unit = pixels
+pub const SCREEN_Y_DIM: u32 = 144; //unit = pixels
 
 //Bit masks
 pub const SET_ZERO_FLAG_MASK: u16 = 0b0000000010000000;

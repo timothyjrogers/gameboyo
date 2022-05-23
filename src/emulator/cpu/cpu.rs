@@ -11,6 +11,15 @@ pub enum CpuState {
 
 }
 
+/*
+registers: contains registers A F B C D E HL plus 8- and 16-bit access functions
+sp: 16-bit stack pointer
+pc: 16-bit program counter
+IF: contains interrupt flags and access functions
+IE: contains interrupt enable register and access functions
+IME: master interrut enable register
+
+ */
 pub struct CPU {
     registers: Registers,
     sp: u16,

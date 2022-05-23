@@ -84,16 +84,10 @@ impl Application for Gameboyo {
             Message::Tick => {
                 /*
                     - Fires 59.7275 times per second
-                    Loop 70224 times (Machine Cycles per Frame):
-                        Execute single machine-cycle in CPU
-                            - Individual OP dispatch must understand cycle-context
-                        Execute single machine-cycle in PPU
-                        Execute single machine cycle in APU
-                 */
-                /*
-                for i in 0..constants::CYCLES_PER_FRAME {
-                  self.emulator.tick()
-                }
+                    while emulator_running == TRUE:
+                        Loop 70224 times (Machine Cycles per Frame):
+                            emulator.tick()
+                                //This ticks with the 4 MHz clock
                 */
             }
             Message::Goto(p) => {
