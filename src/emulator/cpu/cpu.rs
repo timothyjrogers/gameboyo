@@ -109,8 +109,8 @@ impl CPU {
                     0x07 => self.rlca(),                                                                                        //RLCA
                     0x08 => self.sti_u16_sp(cycle, memory),                                                                            //LD (u16),SP
                     0x09 => self.add_rr_rr(cycle, Register16::HL, Register16::BC),                                             //ADD HL,BC
-                    0x0A => self.ldi_r_rr(memory, Register8::A, Register16::BC),                                    //LD A,(BC)
-                    0x0B => self.dec_rr(Register16::BC),                                                                //DEC BC
+                    0x0A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::BC),                                    //LD A,(BC)
+                    0x0B => self.dec_rr(cycle, Register16::BC),                                                                //DEC BC
                     0x0C => self.inc_r(Register8::C),                                                                   //INC C
                     0x0D => self.dec_r(Register8::C),                                                                   //DEC C
                     0x0E => self.ld_r_u8(cycle, memory, Register8::C),                                                            //LD C,u8
@@ -126,9 +126,9 @@ impl CPU {
                     0x16 => self.ld_r_u8(cycle, memory, Register8::D),                                                            //LD D,u8
                     0x17 => self.rla(),                                                                                     //RLA
                     0x18 => cycles += self.jr_i8(memory, vec![]),                                                          //JR i8
-                    0x19 => self.add_rr_rr(Register16::HL, Register16::DE), //ADD HL,DE
-                    0x1A => self.ldi_r_rr(memory, Register8::A, Register16::DE),                                   //LD A,(DE)
-                    0x1B => self.dec_rr(Register16::DE),                                                               //DEC DE
+                    0x19 => self.add_rr_rr(cycle, Register16::HL, Register16::DE), //ADD HL,DE
+                    0x1A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::DE),                                   //LD A,(DE)
+                    0x1B => self.dec_rr(cycle, Register16::DE),                                                               //DEC DE
                     0x1C => self.inc_r(Register8::E),                                                                  //INC E
                     0x1D => self.dec_r(Register8::E),                                                                  //DEC E
                     0x1E => self.ld_r_u8(cycle, memory, Register8::E),                                                           //LD E,u8
@@ -145,12 +145,12 @@ impl CPU {
                     0x26 => self.ld_r_u8(cycle, memory, Register8::H),                                                           //LD H,u8
                     0x27 => self.daa(),                                                                                    //DAA
                     0x28 => cycles += self.jr_i8(memory, vec![Flags::Z]),                                                 //JR Z,e8
-                    0x29 => self.add_rr_rr(Register16::HL, Register16::HL),  //ADD HL,HL
+                    0x29 => self.add_rr_rr(cycle, Register16::HL, Register16::HL),  //ADD HL,HL
                     0x2A => {                                                                                                   //LD A, (HL+)
-                        self.ldi_r_rr(memory, Register8::A, Register16::HL);
+                        self.ldi_r_rr(cycle, memory, Register8::A, Register16::HL);
                         self.inc_rr(cycle, Register8:H, Register8:L);
                     },
-                    0x2B => self.dec_rr(Register16::HL),                                                               //DEC HL
+                    0x2B => self.dec_rr(cycle, Register16::HL),                                                               //DEC HL
                     0x2C => self.inc_r(Register8::L),                                                                  //INC L
                     0x2D => self.dec_r(Targets::L),                                                                   //DEC L
                     0x2E => self.ld_r_u8(cycle, memory, Register8::L),                                                           //LD L,u8
@@ -169,7 +169,7 @@ impl CPU {
                     0x38 => cycles += self.jr_i8(memory, vec![Flags::C]),                                                 //JR C,e8
                     0x39 => self.add_rr_sp(Register16::HL),                                                          //ADD HL,SP TODO
                     0x3A => {                                                                                                   //LD A, (HL-)
-                        self.ldi_r_rr(memory, Register8::A, Register16::HL);
+                        self.ldi_r_rr(cycle, memory, Register8::A, Register16::HL);
                         self.dec_rr(Register16::HL);
                     },
                     0x3B => self.sp = self.sp.overflowing_sub(1).0,                                                         //DEC SP
@@ -183,7 +183,7 @@ impl CPU {
                     0x43 => self.ld_r_r(Register8::B, Register8::E),                                                     //LD B, E
                     0x44 => self.ld_r_r(Register8::B, Register8::H),                                                     //LD B, H
                     0x45 => self.ld_r_r(Register8::B, Register8::L),                                                     //LD B, L
-                    0x46 => self.ldi_r_rr(memory, Register8::B, Register16::HL),                                   //LD B, (HL)
+                    0x46 => self.ldi_r_rr(cycle, memory, Register8::B, Register16::HL),                                   //LD B, (HL)
                     0x47 => self.ld_r_r(Register8::B, Register8::A),                                                     //LD B, A
                     0x48 => self.ld_r_r(Register8::C, Register8::B),                                                     //LD C, B
                     0x49 => self.ld_r_r(Register8::C, Register8::C),                                                     //LD C, C
@@ -191,7 +191,7 @@ impl CPU {
                     0x4B => self.ld_r_r(Register8::C, Register8::E),                                                     //LD C, E
                     0x4C => self.ld_r_r(Register8::C, Register8::H),                                                     //LD C, H
                     0x4D => self.ld_r_r(Register8::C, Register8::L),                                                     //LD C, L
-                    0x4E => self.ldi_r_rr(memory, Register8::C, Register16::HL),                                   //LD C, (HL)
+                    0x4E => self.ldi_r_rr(cycle, memory, Register8::C, Register16::HL),                                   //LD C, (HL)
                     0x4F => self.ld_r_r(Register8::C, Register8::A),                                                     //LD C, A
                     0x50 => self.ld_r_r(Register8::D, Register8::B),                                                     //LD D, B
                     0x51 => self.ld_r_r(Register8::D, Register8::C),                                                     //LD D, C
@@ -199,7 +199,7 @@ impl CPU {
                     0x53 => self.ld_r_r(Register8::D, Register8::E),                                                     //LD D, E
                     0x54 => self.ld_r_r(Register8::D, Register8::H),                                                     //LD D, H
                     0x55 => self.ld_r_r(Register8::D, Register8::L),                                                     //LD D, L
-                    0x56 => self.ldi_r_rr(memory, Register8::D, Register16::HL),                                   //LD D, (HL)
+                    0x56 => self.ldi_r_rr(cycle, memory, Register8::D, Register16::HL),                                   //LD D, (HL)
                     0x57 => self.ld_r_r(Register8::D, Register8::A),                                                     //LD D, A
                     0x58 => self.ld_r_r(Register8::E, Register8::B),                                                     //LD E, B
                     0x59 => self.ld_r_r(Register8::E, Register8::C),                                                     //LD E, C
@@ -207,7 +207,7 @@ impl CPU {
                     0x5B => self.ld_r_r(Register8::E, Register8::E),                                                     //LD E, E
                     0x5C => self.ld_r_r(Register8::E, Register8::H),                                                     //LD E, H
                     0x5D => self.ld_r_r(Register8::E, Register8::L),                                                     //LD E, L
-                    0x5E => self.ldi_r_rr(memory, Register8::E, Register16::HL),                                   //LD E, (HL)
+                    0x5E => self.ldi_r_rr(cycle, memory, Register8::E, Register16::HL),                                   //LD E, (HL)
                     0x5F => self.ld_r_r(Register8::E, Register8::A),                                                      //LD E, A
                     0x60 => self.ld_r_r(Register8::H, Register8::B),                                                     //LD H, B
                     0x61 => self.ld_r_r(Register8::H, Register8::C),                                                     //LD H, C
@@ -215,7 +215,7 @@ impl CPU {
                     0x63 => self.ld_r_r(Register8::H, Register8::E),                                                     //LD H, E
                     0x64 => self.ld_r_r(Register8::H, Register8::H),                                                     //LD H, H
                     0x65 => self.ld_r_r(Register8::H, Register8::L),                                                     //LD H, L
-                    0x66 => self.ldi_r_rr(memory, Register8::H, Register16::HL),                                  //LD H, (HL)
+                    0x66 => self.ldi_r_rr(cycle, memory, Register8::H, Register16::HL),                                  //LD H, (HL)
                     0x67 => self.ld_r_r(Register8::H, Register8::A),                                                     //LD H, A
                     0x68 => self.ld_r_r(Register8::L, Register8::B),                                                     //LD L, B
                     0x69 => self.ld_r_r(Register8::L, Register8::C),                                                     //LD L, C
@@ -223,7 +223,7 @@ impl CPU {
                     0x6B => self.ld_r_r(Register8::L, Register8::E),                                                     //LD L, E
                     0x6C => self.ld_r_r(Register8::L, Register8::H),                                                     //LD L, H
                     0x6D => self.ld_r_r(Register8::L, Register8::L),                                                     //LD L, L
-                    0x6E => self.ldi_r_rr(memory, Register8::L, Register16::HL),                                   //LD L, (HL)
+                    0x6E => self.ldi_r_rr(cycle, memory, Register8::L, Register16::HL),                                   //LD L, (HL)
                     0x6F=> self.ld_r_r(Register8::L, Register8::A),                                                      //LD L, A
                     0x70 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::B),                                  //LD (HL), B
                     0x71 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::C),                                  //LD (HL), C
@@ -241,7 +241,7 @@ impl CPU {
                     0x7B => self.ld_r_r(Register8::A, Register8::E),                                                     //LD A, E
                     0x7C => self.ld_r_r(Register8::A, Register8::H),                                                     //LD A, H
                     0x7D => self.ld_r_r(Register8::A, Register8::L),                                                     //LD A, L
-                    0x7E => self.ldi_r_rr(memory, Register8::A, Register16::HL),                                  //LD A, (HL)
+                    0x7E => self.ldi_r_rr(cycle, memory, Register8::A, Register16::HL),                                  //LD A, (HL)
                     0x7F=> self.ld_r_r(Register8::A, Register8::A),                                                      //LD A, A
                     0x80 => self.add_r_r(Register8::A, Register8::B),                                            //ADD A, B
                     0x81 => self.add_r_r(Register8::A, Register8::C),                                            //ADD A, C
@@ -544,10 +544,14 @@ impl CPU {
     }
 
     //ldi R1, (R2)
-    fn ldi_r_rr(&mut self, memory: &mut Memory, register1: Register8, register2: Register16) {
-        let addr = self.registers.get16(register2);
-        let val = memory.read(addr);
-        self.registers.set8(register1, val);
+    fn ldi_r_rr(&mut self, cycle: u32, memory: &mut Memory, register1: Register8, register2: Register16) {
+        if cycle == 4 {
+            let addr = self.registers.get16(register2);
+            let val = memory.read(addr);
+            self.registers.set8(register1, val);
+        } else if cycle == 8 {
+            self.instr_state = None;
+        }
     }
 
     //ldi R, (u16)
