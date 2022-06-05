@@ -7,10 +7,17 @@ pub enum Interrupt {
     Joypad,
 }
 
+enum InterruptState {
+    Disabled,
+    Enabled,
+    Pending(u32),
+}
+
 pub struct InterruptRegisters {
     enable: u8,
     flags: u8,
     ime: bool,
+    state: InterruptState,
 }
 
 impl InterruptRegisters {
@@ -19,6 +26,7 @@ impl InterruptRegisters {
             enable: 0b00000000,
             flags: 0b11100000,
             ime: true,
+            state: InterruptState::Enabled,
         }
     }
 
@@ -104,13 +112,31 @@ impl InterruptRegisters {
 
     pub fn set_ime(&mut self) {
         self.ime = true;
+        self.state = InterruptState::Enabled;
     }
 
     pub fn reset_ime(&mut self) {
         self.ime = false;
+        self.state = InterruptState::Disabled;
     }
 
     pub fn check_interrupt(&self, interrupt: Interrupt) -> bool {
         return self.ime && self.enabled(interrupt) && self.get_flag(interrupt);
+    }
+
+    pub fn ei(&mut self) {
+        self.state = InterruptState::Pending(0);
+    }
+
+    pub fn check_ei(&mut self) {
+        match &self.state {
+            InterruptStatePending(x) => {
+                if *x == 0 {
+                    self.state = InterruptState::Pending(1);
+                } else {
+                    self.set_ime;
+                }
+            }
+        }
     }
 }

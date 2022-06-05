@@ -32,7 +32,8 @@ pub struct CPU {
 struct InstructionState {
     cycle: u8,
     instruction: u16,
-    intermediate: u16
+    intermediate: u16,
+    prefix: bool,
 }
 
 impl InstructionState {
@@ -41,6 +42,7 @@ impl InstructionState {
             cycle: 1,
             instruction,
             intermediate: 0,
+            prefix: false,
         }
     }
 }
@@ -74,7 +76,8 @@ impl CPU {
     }
 
     pub fn tick(&mut self, memory: &mut Memory) {
-        let mut update_pc = true;
+        //TODO check EI in interrupts
+        //TODO check for requested interrupts
         match &self.state {
             CpuState::Ready => {
                 //let mut instr = memory.read(self.pc);             // fetch instruction at [PC]
@@ -82,9 +85,13 @@ impl CPU {
                 let mut cycle: u32 = 0;
                 match &mut self.instr_state {
                     Some(x) => {
-                        if 1 <= *x.cycle && *x.cycle < 4 {
+                        if 1 <= *x.cycle && *x.cycle < 4 || (4 <= *x.cycle && *x.cycle < 8 && *x.prefix) {
                             *x.cycle = *x.cycle + 1;
                             return;
+                        }
+                        if *x.cycle == 8 && *x.prefix {
+                            self.pc = self.pc + 1;
+                            *x.instruction = memory.read(self.pc);
                         }
                         instr = *x.instruction;
                         *x.cycle = *x.cycle + 1;
@@ -92,359 +99,260 @@ impl CPU {
                     },
                     None => {
                         instr = memory.read(self.pc);
-                        self.pc = self.pc + 1;
                         self.instr_state = Some(InstructionState::new(instr as u16));
                         return;
                     }
                 }
                 match instr {
                     0xCB  => self.state = CpuState::Wait(4),                                                                       //TODO PREFIX CB
-                    0x00 => self.nop(),                                                                                             //NOP
-                    0x01 => self.ld_rr_u16(cycle, memory, Register8::B, Register8::C),                                                           //LD BC,u16
-                    0x02 => self.sti_rr_r(cycle, memory, Register16::BC, Register8::A),                                     //LD (BC),A
-                    0x03 => self.inc_rr(cycle, Register8:B, Register8:C),                                                                 //INC BC
-                    0x04 => self.inc_r(Register8::B),                                                                    //INC B
-                    0x05 => self.dec_r(Register8::B),                                                                    //DEC B
-                    0x06 => self.ld_r_u8(cycle, memory, Register8::B),                                                             //LD B,u8
-                    0x07 => self.rlca(),                                                                                        //RLCA
-                    0x08 => self.sti_u16_sp(cycle, memory),                                                                            //LD (u16),SP
-                    0x09 => self.add_rr_rr(cycle, Register16::HL, Register16::BC),                                             //ADD HL,BC
-                    0x0A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::BC),                                    //LD A,(BC)
-                    0x0B => self.dec_rr(cycle, Register16::BC),                                                                //DEC BC
-                    0x0C => self.inc_r(Register8::C),                                                                   //INC C
-                    0x0D => self.dec_r(Register8::C),                                                                   //DEC C
-                    0x0E => self.ld_r_u8(cycle, memory, Register8::C),                                                            //LD C,u8
-                    0x0F => self.rrca(),                                                                                    //RRCA
+                    0x00 => self.nop(cycle),                                                                                        //NOP
+                    0x01 => self.ld_rr_u16(cycle, memory, Register8::B, Register8::C),                                   //LD BC,u16
+                    0x02 => self.sti_rr_r(cycle, memory, Register16::BC, Register8::A),                             //LD (BC),A
+                    0x03 => self.inc_rr(cycle, Register16::BC),                                                                 //INC BC
+                    0x04 => self.inc_r(cycle,Register8::B),                                                                 //INC B
+                    0x05 => self.dec_r(cycle,Register8::B),                                                                 //DEC B
+                    0x06 => self.ld_r_u8(cycle, memory, Register8::B),                                                      //LD B,u8
+                    0x07 => self.rlca(cycle),                                                                                      //RLCA
+                    0x08 => self.sti_u16_sp(cycle, memory),                                                                         //LD (u16),SP
+                    0x09 => self.add_rr_rr(cycle, Register16::HL, Register16::BC),                                       //ADD HL,BC
+                    0x0A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::BC),                              //LD A,(BC)
+                    0x0B => self.dec_rr(cycle, Register16::BC),                                                               //DEC BC
+                    0x0C => self.inc_r(cycle, Register8::C),                                                                  //INC C
+                    0x0D => self.dec_r(cycle, Register8::C),                                                                  //DEC C
+                    0x0E => self.ld_r_u8(cycle, memory, Register8::C),                                                        //LD C,u8
+                    0x0F => self.rrca(cycle),                                                                                    //RRCA
                     0x10 => {                                                                                                    //TODO STOP
                         self.state = CpuState::Wait(4);
                     },
-                    0x11 => self.ld_rr_u16(cycle, memory, Register8::D, Register8::E),                                                         //LD DE,u16
-                    0x12 => self.sti_rr_r(cycle, memory, Register16::DE, Register8::A),                                    //LD (DE),A
-                    0x13 => self.inc_rr(cycle, Register8:D, Register8:E),                                                                //INC DE
-                    0x14 => self.inc_r(Register8::D),                                                                   //INC D
-                    0x15 => self.dec_r(Register8::D),                                                                   //DEC D
-                    0x16 => self.ld_r_u8(cycle, memory, Register8::D),                                                            //LD D,u8
-                    0x17 => self.rla(),                                                                                     //RLA
-                    0x18 => cycles += self.jr_i8(memory, vec![]),                                                          //JR i8
+                    0x11 => self.ld_rr_u16(cycle, memory, Register8::D, Register8::E),                                 //LD DE,u16
+                    0x12 => self.sti_rr_r(cycle, memory, Register16::DE, Register8::A),                            //LD (DE),A
+                    0x13 => self.inc_rr(cycle, Register16::DE),                                                                //INC DE
+                    0x14 => self.inc_r(cycle, Register8::D),                                                               //INC D
+                    0x15 => self.dec_r(cycle, Register8::D),                                                                //DEC D
+                    0x16 => self.ld_r_u8(cycle, memory, Register8::D),                                                       //LD D,u8
+                    0x17 => self.rla(cycle),                                                                                       //RLA
+                    0x18 => self.jr_i8(cycle, memory, vec![]),                                                            //JR i8
                     0x19 => self.add_rr_rr(cycle, Register16::HL, Register16::DE), //ADD HL,DE
-                    0x1A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::DE),                                   //LD A,(DE)
+                    0x1A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::DE),                               //LD A,(DE)
                     0x1B => self.dec_rr(cycle, Register16::DE),                                                               //DEC DE
-                    0x1C => self.inc_r(Register8::E),                                                                  //INC E
-                    0x1D => self.dec_r(Register8::E),                                                                  //DEC E
+                    0x1C => self.inc_r(cycle, Register8::E),                                                                  //INC E
+                    0x1D => self.dec_r(cycle, Register8::E),                                                                  //DEC E
                     0x1E => self.ld_r_u8(cycle, memory, Register8::E),                                                           //LD E,u8
-                    0x1F => self.rra(),                                                                                    //RRA
-                    0x20 => cycles += self.jr_i8(memory, vec![Flags::N, Flags::Z]),                                       //JR NZ,e8
-                    0x21 => self.ld_rr_u16(cycle, memory, Register8::H, Register8::L),                                                        //LD HL,u16
-                    0x22 => {                                                                                                   //LD (HL+), A
-                        self.sti_rr_r(cycle, memory, Register16::HL, Register8::A);
-                        self.inc_rr(cycle, Register8:H, Register8:L);
-                    },
-                    0x23 => self.inc_rr(cycle, Register8:H, Register8:L),                                                               //INC HL
-                    0x24 => self.inc_r(Register8::H),                                                                  //INC H
-                    0x25 => self.dec_r(Register8::H),                                                                  //DEC H
+                    0x1F => self.rra(cycle),                                                                                    //RRA
+                    0x20 => self.jr_i8(cycle, memory, vec![Flags::N, Flags::Z]),                                       //JR NZ,e8
+                    0x21 => self.ld_rr_u16(cycle, memory, Register8::H, Register8::L),                                //LD HL,u16
+                    0x22 => self.sti_rr_r_inc(cycle, memory, Register16::HL, Register8::A),                      //LD (HL+), A
+                    0x23 => self.inc_rr(cycle, Register16::HL),                                                               //INC HL
+                    0x24 => self.inc_r(cycle, Register8::H),                                                                  //INC H
+                    0x25 => self.dec_r(cycle, Register8::H),                                                                  //DEC H
                     0x26 => self.ld_r_u8(cycle, memory, Register8::H),                                                           //LD H,u8
-                    0x27 => self.daa(),                                                                                    //DAA
-                    0x28 => cycles += self.jr_i8(memory, vec![Flags::Z]),                                                 //JR Z,e8
-                    0x29 => self.add_rr_rr(cycle, Register16::HL, Register16::HL),  //ADD HL,HL
-                    0x2A => {                                                                                                   //LD A, (HL+)
-                        self.ldi_r_rr(cycle, memory, Register8::A, Register16::HL);
-                        self.inc_rr(cycle, Register8:H, Register8:L);
-                    },
-                    0x2B => self.dec_rr(cycle, Register16::HL),                                                               //DEC HL
-                    0x2C => self.inc_r(Register8::L),                                                                  //INC L
-                    0x2D => self.dec_r(Targets::L),                                                                   //DEC L
-                    0x2E => self.ld_r_u8(cycle, memory, Register8::L),                                                           //LD L,u8
-                    0x2F => self.cpl(),                                                                                    //CPL
-                    0x30 => cycles += self.jr_i8(memory, vec![Flags::N, Flags::C]),                                       //JR NC,e8
-                    0x31 => self.sp = self.fetch_u16_immediate(memory),                                                         //LD SP,u16 TODO
-                    0x32 => {                                                                                                   //LD (HL-), A
-                        self.sti_rr_r(cycle, memory, Register16::HL, Register8::A);
-                        self.dec_rr(Register16::HL);
-                    },
-                    0x33 => self.sp = self.sp.overflowing_add(1).0,                                                         //INC SP
-                    0x34 => self.alu8_inci(memory, Register16::HL),                                                         //INC (HL)
-                    0x35 => self.alu8_deci(memory, Register16::HL),                                                         //DEC (HL)
-                    0x36 => self.sti_rr_u8(memory, Register16::HL),                                                    //LD (HL), u8
-                    0x37 => self.scf(),                                                                                   //SCF
-                    0x38 => cycles += self.jr_i8(memory, vec![Flags::C]),                                                 //JR C,e8
-                    0x39 => self.add_rr_sp(Register16::HL),                                                          //ADD HL,SP TODO
-                    0x3A => {                                                                                                   //LD A, (HL-)
-                        self.ldi_r_rr(cycle, memory, Register8::A, Register16::HL);
-                        self.dec_rr(Register16::HL);
-                    },
-                    0x3B => self.sp = self.sp.overflowing_sub(1).0,                                                         //DEC SP
-                    0x3C => self.inc_r(Register8::A),                                                                  //INC A
-                    0x3D => self.dec_r(Register8::A),                                                                  //DEC A
-                    0x3E => self.ld_r_u8(cycle, memory, Register8::A),                                                           //LD A,u8
-                    0x3F => self.ccf(),                                                                                    //CCF
-                    0x40 => self.ld_r_r(Register8::B, Register8::B),                                                     //LD B, B
-                    0x41 => self.ld_r_r(Register8::B, Register8::C),                                                     //LD B, C
-                    0x42 => self.ld_r_r(Register8::B, Register8::D),                                                     //LD B, D
-                    0x43 => self.ld_r_r(Register8::B, Register8::E),                                                     //LD B, E
-                    0x44 => self.ld_r_r(Register8::B, Register8::H),                                                     //LD B, H
-                    0x45 => self.ld_r_r(Register8::B, Register8::L),                                                     //LD B, L
-                    0x46 => self.ldi_r_rr(cycle, memory, Register8::B, Register16::HL),                                   //LD B, (HL)
-                    0x47 => self.ld_r_r(Register8::B, Register8::A),                                                     //LD B, A
-                    0x48 => self.ld_r_r(Register8::C, Register8::B),                                                     //LD C, B
-                    0x49 => self.ld_r_r(Register8::C, Register8::C),                                                     //LD C, C
-                    0x4A => self.ld_r_r(Register8::C, Register8::D),                                                     //LD C, D
-                    0x4B => self.ld_r_r(Register8::C, Register8::E),                                                     //LD C, E
-                    0x4C => self.ld_r_r(Register8::C, Register8::H),                                                     //LD C, H
-                    0x4D => self.ld_r_r(Register8::C, Register8::L),                                                     //LD C, L
+                    0x27 => self.daa(cycle),                                                                                    //DAA
+                    0x28 => self.jr_i8(cycle, memory, vec![Flags::Z]),                                                 //JR Z,e8
+                    0x29 => self.add_rr_rr(cycle, Register16::HL, Register16::HL),                                  //ADD HL,HL
+                    0x2A => self.ldi_r_rr_inc(cycle, memory, Register8::A, Register16::HL),                      //LD A, (HL+)
+                    0x2B => self.dec_rr(cycle, Register16::HL),                                                         //DEC HL
+                    0x2C => self.inc_r(cycle, Register8::L),                                                            //INC L
+                    0x2D => self.dec_r(cycle, Targets::L),                                                              //DEC L
+                    0x2E => self.ld_r_u8(cycle, memory, Register8::L),                                                 //LD L,u8
+                    0x2F => self.cpl(cycle),                                                                                         //CPL
+                    0x30 => self.jr_i8(cycle, memory, vec![Flags::N, Flags::C]),                                       //JR NC,e8
+                    0x31 => self.ld_sp_u16(cycle, memory),                                                                      //LD SP,u16
+                    0x32 => self.sti_rr_r_dec(cycle, memory, Register16::HL, Register8::A),                      //LD (HL-), A
+                    0x33 => self.inc_sp(cycle),                                                                                 //INC SP
+                    0x34 => self.inci_rr(cycle, memory, Register16::HL),                                                         //INC (HL)
+                    0x35 => self.deci_rr(cycle, memory, Register16::HL),                                                         //DEC (HL)
+                    0x36 => self.sti_rr_u8(cycle, memory, Register16::HL),                                                    //LD (HL), u8
+                    0x37 => self.scf(cycle),                                                                                   //SCF
+                    0x38 => self.jr_i8(cycle, memory, vec![Flags::C]),                                                 //JR C,e8
+                    0x39 => self.add_rr_sp(cycle,Register16::HL),                                                                 //ADD HL,SP TODO
+                    0x3A => self.ldi_r_rr_dec(cycle, memory, Register8::A, Register16::HL),                      //LD A, (HL-)
+                    0x3B => self.dec_sp(cycle),                                                                                 //DEC SP
+                    0x3C => self.inc_r(cycle, Register8::A),                                                             //INC A
+                    0x3D => self.dec_r(cycle, Register8::A),                                                             //DEC A
+                    0x3E => self.ld_r_u8(cycle, memory, Register8::A),                                                   //LD A,u8
+                    0x3F => self.ccf(cycle),                                                                                    //CCF
+                    0x40 => self.ld_r_r(cycle, Register8::B, Register8::B),                                                     //LD B, B
+                    0x41 => self.ld_r_r(cycle, Register8::B, Register8::C),                                                     //LD B, C
+                    0x42 => self.ld_r_r(cycle, Register8::B, Register8::D),                                                     //LD B, D
+                    0x43 => self.ld_r_r(cycle, Register8::B, Register8::E),                                                     //LD B, E
+                    0x44 => self.ld_r_r(cycle, Register8::B, Register8::H),                                                     //LD B, H
+                    0x45 => self.ld_r_r(cycle, Register8::B, Register8::L),                                                     //LD B, L
+                    0x46 => self.ldi_r_rr(cycle, memory, Register8::B, Register16::HL),                          //LD B, (HL)
+                    0x47 => self.ld_r_r(cycle, Register8::B, Register8::A),                                                     //LD B, A
+                    0x48 => self.ld_r_r(cycle, Register8::C, Register8::B),                                                     //LD C, B
+                    0x49 => self.ld_r_r(cycle, Register8::C, Register8::C),                                                     //LD C, C
+                    0x4A => self.ld_r_r(cycle, Register8::C, Register8::D),                                                     //LD C, D
+                    0x4B => self.ld_r_r(cycle, Register8::C, Register8::E),                                                     //LD C, E
+                    0x4C => self.ld_r_r(cycle, Register8::C, Register8::H),                                                     //LD C, H
+                    0x4D => self.ld_r_r(cycle, Register8::C, Register8::L),                                                     //LD C, L
                     0x4E => self.ldi_r_rr(cycle, memory, Register8::C, Register16::HL),                                   //LD C, (HL)
-                    0x4F => self.ld_r_r(Register8::C, Register8::A),                                                     //LD C, A
-                    0x50 => self.ld_r_r(Register8::D, Register8::B),                                                     //LD D, B
-                    0x51 => self.ld_r_r(Register8::D, Register8::C),                                                     //LD D, C
-                    0x52 => self.ld_r_r(Register8::D, Register8::D),                                                     //LD D, D
-                    0x53 => self.ld_r_r(Register8::D, Register8::E),                                                     //LD D, E
-                    0x54 => self.ld_r_r(Register8::D, Register8::H),                                                     //LD D, H
-                    0x55 => self.ld_r_r(Register8::D, Register8::L),                                                     //LD D, L
+                    0x4F => self.ld_r_r(cycle, Register8::C, Register8::A),                                                     //LD C, A
+                    0x50 => self.ld_r_r(cycle, Register8::D, Register8::B),                                                     //LD D, B
+                    0x51 => self.ld_r_r(cycle, Register8::D, Register8::C),                                                     //LD D, C
+                    0x52 => self.ld_r_r(cycle, Register8::D, Register8::D),                                                     //LD D, D
+                    0x53 => self.ld_r_r(cycle, Register8::D, Register8::E),                                                     //LD D, E
+                    0x54 => self.ld_r_r(cycle, Register8::D, Register8::H),                                                     //LD D, H
+                    0x55 => self.ld_r_r(cycle, Register8::D, Register8::L),                                                     //LD D, L
                     0x56 => self.ldi_r_rr(cycle, memory, Register8::D, Register16::HL),                                   //LD D, (HL)
-                    0x57 => self.ld_r_r(Register8::D, Register8::A),                                                     //LD D, A
-                    0x58 => self.ld_r_r(Register8::E, Register8::B),                                                     //LD E, B
-                    0x59 => self.ld_r_r(Register8::E, Register8::C),                                                     //LD E, C
-                    0x5A => self.ld_r_r(Register8::E, Register8::D),                                                     //LD E, D
-                    0x5B => self.ld_r_r(Register8::E, Register8::E),                                                     //LD E, E
-                    0x5C => self.ld_r_r(Register8::E, Register8::H),                                                     //LD E, H
-                    0x5D => self.ld_r_r(Register8::E, Register8::L),                                                     //LD E, L
+                    0x57 => self.ld_r_r(cycle, Register8::D, Register8::A),                                                     //LD D, A
+                    0x58 => self.ld_r_r(cycle, Register8::E, Register8::B),                                                     //LD E, B
+                    0x59 => self.ld_r_r(cycle, Register8::E, Register8::C),                                                     //LD E, C
+                    0x5A => self.ld_r_r(cycle, Register8::E, Register8::D),                                                     //LD E, D
+                    0x5B => self.ld_r_r(cycle, Register8::E, Register8::E),                                                     //LD E, E
+                    0x5C => self.ld_r_r(cycle, Register8::E, Register8::H),                                                     //LD E, H
+                    0x5D => self.ld_r_r(cycle, Register8::E, Register8::L),                                                     //LD E, L
                     0x5E => self.ldi_r_rr(cycle, memory, Register8::E, Register16::HL),                                   //LD E, (HL)
-                    0x5F => self.ld_r_r(Register8::E, Register8::A),                                                      //LD E, A
-                    0x60 => self.ld_r_r(Register8::H, Register8::B),                                                     //LD H, B
-                    0x61 => self.ld_r_r(Register8::H, Register8::C),                                                     //LD H, C
-                    0x62 => self.ld_r_r(Register8::H, Register8::D),                                                     //LD H, D
-                    0x63 => self.ld_r_r(Register8::H, Register8::E),                                                     //LD H, E
-                    0x64 => self.ld_r_r(Register8::H, Register8::H),                                                     //LD H, H
-                    0x65 => self.ld_r_r(Register8::H, Register8::L),                                                     //LD H, L
+                    0x5F => self.ld_r_r(cycle, Register8::E, Register8::A),                                                      //LD E, A
+                    0x60 => self.ld_r_r(cycle, Register8::H, Register8::B),                                                     //LD H, B
+                    0x61 => self.ld_r_r(cycle, Register8::H, Register8::C),                                                     //LD H, C
+                    0x62 => self.ld_r_r(cycle, Register8::H, Register8::D),                                                     //LD H, D
+                    0x63 => self.ld_r_r(cycle, Register8::H, Register8::E),                                                     //LD H, E
+                    0x64 => self.ld_r_r(cycle, Register8::H, Register8::H),                                                     //LD H, H
+                    0x65 => self.ld_r_r(cycle, Register8::H, Register8::L),                                                     //LD H, L
                     0x66 => self.ldi_r_rr(cycle, memory, Register8::H, Register16::HL),                                  //LD H, (HL)
-                    0x67 => self.ld_r_r(Register8::H, Register8::A),                                                     //LD H, A
-                    0x68 => self.ld_r_r(Register8::L, Register8::B),                                                     //LD L, B
-                    0x69 => self.ld_r_r(Register8::L, Register8::C),                                                     //LD L, C
-                    0x6A => self.ld_r_r(Register8::L, Register8::D),                                                     //LD L, D
-                    0x6B => self.ld_r_r(Register8::L, Register8::E),                                                     //LD L, E
-                    0x6C => self.ld_r_r(Register8::L, Register8::H),                                                     //LD L, H
-                    0x6D => self.ld_r_r(Register8::L, Register8::L),                                                     //LD L, L
+                    0x67 => self.ld_r_r(cycle, Register8::H, Register8::A),                                                     //LD H, A
+                    0x68 => self.ld_r_r(cycle, Register8::L, Register8::B),                                                     //LD L, B
+                    0x69 => self.ld_r_r(cycle, Register8::L, Register8::C),                                                     //LD L, C
+                    0x6A => self.ld_r_r(cycle, Register8::L, Register8::D),                                                     //LD L, D
+                    0x6B => self.ld_r_r(cycle, Register8::L, Register8::E),                                                     //LD L, E
+                    0x6C => self.ld_r_r(cycle, Register8::L, Register8::H),                                                     //LD L, H
+                    0x6D => self.ld_r_r(cycle, Register8::L, Register8::L),                                                     //LD L, L
                     0x6E => self.ldi_r_rr(cycle, memory, Register8::L, Register16::HL),                                   //LD L, (HL)
-                    0x6F=> self.ld_r_r(Register8::L, Register8::A),                                                      //LD L, A
+                    0x6F=> self.ld_r_r(cycle, Register8::L, Register8::A),                                                      //LD L, A
                     0x70 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::B),                                  //LD (HL), B
                     0x71 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::C),                                  //LD (HL), C
                     0x72 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::D),                                  //LD (HL), D
                     0x73 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::E),                                  //LD (HL), E
                     0x74 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::H),                                  //LD (HL), H
                     0x75 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::L),                                  //LD (HL), L
-                    0x76 => {                                                                                                   //HALT
-                        CpuState::Wait(cycles)
+                    0x76 => {                                                                                                   //HALT TODO
+                        CpuState::Wait(4)
                     },
                     0x77 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::A),                                  //LD (HL), A
-                    0x78 => self.ld_r_r(Register8::A, Register8::B),                                                     //LD A, B
-                    0x79 => self.ld_r_r(Register8::A, Register8::C),                                                     //LD A, C
-                    0x7A => self.ld_r_r(Register8::A, Register8::D),                                                     //LD A, D
-                    0x7B => self.ld_r_r(Register8::A, Register8::E),                                                     //LD A, E
-                    0x7C => self.ld_r_r(Register8::A, Register8::H),                                                     //LD A, H
-                    0x7D => self.ld_r_r(Register8::A, Register8::L),                                                     //LD A, L
+                    0x78 => self.ld_r_r(cycle, Register8::A, Register8::B),                                                     //LD A, B
+                    0x79 => self.ld_r_r(cycle, Register8::A, Register8::C),                                                     //LD A, C
+                    0x7A => self.ld_r_r(cycle, Register8::A, Register8::D),                                                     //LD A, D
+                    0x7B => self.ld_r_r(cycle, Register8::A, Register8::E),                                                     //LD A, E
+                    0x7C => self.ld_r_r(cycle, Register8::A, Register8::H),                                                     //LD A, H
+                    0x7D => self.ld_r_r(cycle, Register8::A, Register8::L),                                                     //LD A, L
                     0x7E => self.ldi_r_rr(cycle, memory, Register8::A, Register16::HL),                                  //LD A, (HL)
-                    0x7F=> self.ld_r_r(Register8::A, Register8::A),                                                      //LD A, A
-                    0x80 => self.add_r_r(Register8::A, Register8::B),                                            //ADD A, B
-                    0x81 => self.add_r_r(Register8::A, Register8::C),                                            //ADD A, C
-                    0x82 => self.add_r_r(Register8::A, Register8::D),                                            //ADD A, D
-                    0x83 => self.add_r_r(Register8::A, Register8::E),                                            //ADD A, E
-                    0x84 => self.add_r_r(Register8::A, Register8::H),                                            //ADD A, H
-                    0x85 => self.add_r_r(Register8::A, Register8::L),                                            //ADD A, L
-                    0x86 => self.addi_r_rr(memory, Register8::A, Register16::HL),                                     //ADD A, (HL)
-                    0x87 => self.add_r_r(Register8::A, Register8::A),                                            //ADD A, A
-                    0x88 => self.adc_r_r(Register8::A, Register8::B),                                            //ADC A, B
-                    0x89 => self.adc_r_r(Register8::A, Register8::C),                                            //ADC A, C
-                    0x8A => self.adc_r_r(Register8::A, Register8::D),                                            //ADC A, D
-                    0x8B => self.adc_r_r(Register8::A, Register8::E),                                            //ADC A, E
-                    0x8C => self.adc_r_r(Register8::A, Register8::H),                                            //ADC A, H
-                    0x8D => self.adc_r_r(Register8::A, Register8::L),                                            //ADC A, L
-                    0x8E => self.adci_r_rr(memory, Register8::A, Register16::HL),                                     //ADC A, (HL)
-                    0x8F => self.adc_r_r(Register8::A, Register8::A),                                            //ADC A, A
-                    0x90 => self.sub_r_r(Register8::A, Register8::B),                                            //SUB A, B
-                    0x91 => self.sub_r_r(Register8::A, Register8::C),                                            //SUB A, C
-                    0x92 => self.sub_r_r(Register8::A, Register8::D),                                            //SUB A, D
-                    0x93 => self.sub_r_r(Register8::A, Register8::E),                                            //SUB A, E
-                    0x94 => self.sub_r_r(Register8::A, Register8::H),                                            //SUB A, H
-                    0x95 => self.sub_r_r(Register8::A, Register8::L),                                            //SUB A, L
-                    0x96 => self.sub_r_rr(memory, Register8::A, Register16::HL),                                     //SUB A, (HL)
-                    0x97 => self.sub_r_r(Register8::A, Register8::A),                                            //SUB A, A
-                    0x98 => self.sbc_r_r(Register8::A, Register8::B),                                                           //SBC A, B
-                    0x99 => self.sbc_r_r(Register8::A, Register8::C),                                                           //SBC A, C
-                    0x9A => self.sbc_r_r(Register8::A, Register8::D),                                                           //SBC A, D
-                    0x9B => self.sbc_r_r(Register8::A, Register8::E),                                                           //SBC A, E
-                    0x9C => self.sbc_r_r(Register8::A, Register8::H),                                                           //SBC A, H
-                    0x9D => self.sbc_r_r(Register8::A, Register8::L),                                                           //SBC A, L
-                    0x9E => self.sbci_r_rr(memory, Register8::A, Register16::HL),                                                //SBC A, (HL)
-                    0x9F => self.sbc_r_r(Register8::A, Register8::A),                                                           //SBC A, A
-                    0xA0 => self.and_r_r(Register8::A, Register8::B),                                            //AND A, B
-                    0xA1 => self.and_r_r(Register8::A, Register8::C),                                            //AND A, C
-                    0xA2 => self.and_r_r(Register8::A, Register8::D),                                            //AND A, D
-                    0xA3 => self.and_r_r(Register8::A, Register8::E),                                            //AND A, E
-                    0xA4 => self.and_r_r(Register8::A, Register8::H),                                            //AND A, H
-                    0xA5 => self.and_r_r(Register8::A, Register8::L),                                            //AND A, L
-                    0xA6 => self.andi_r_rr(memory, Register8::A, Register16::HL),                                     //AND A, (HL)
-                    0xA7 => self.and_r_r(Register8::A, Register8::A),                                            //AND A, A
-                    0xA8 => self.xor_r_r(Register8::A, Register8::B),                                            //XOR A, B
-                    0xA9 => self.xor_r_r(Register8::A, Register8::C),                                            //XOR A, C
-                    0xAA => self.xor_r_r(Register8::A, Register8::D),                                            //XOR A, D
-                    0xAB => self.xor_r_r(Register8::A, Register8::E),                                            //XOR A, E
-                    0xAC => self.xor_r_r(Register8::A, Register8::H),                                            //XOR A, H
-                    0xAD => self.xor_r_r(Register8::A, Register8::L),                                            //XOR A, L
-                    0xAE => self.xori_r_rr(memory, Register8::A, Register16::HL),                                     //XOR A, (HL)
-                    0xAF => self.xor_r_r(Register8::A, Register8::A),                                            //XOR A, A
-                    0xB0 => self.or_r_r(Register8::A, Register8::B),                                             //OR A, B
-                    0xB1 => self.or_r_r(Register8::A, Register8::C),                                             //OR A, C
-                    0xB2 => self.or_r_r(Register8::A, Register8::D),                                             //OR A, D
-                    0xB3 => self.or_r_r(Register8::A, Register8::E),                                             //OR A, E
-                    0xB4 => self.or_r_r(Register8::A, Register8::H),                                             //OR A, H
-                    0xB5 => self.or_r_r(Register8::A, Register8::L),                                             //OR A, L
-                    0xB6 => self.ori_r_rr(memory, Register8::A, Register16::HL),                                      //OR A, (HL)
-                    0xB7 => self.or_r_r(Register8::A, Register8::A),                                             //OR A, A
-                    0xB8 => self.cp_r_r(Register8::A, Register8::B),                                             //CP A, B
-                    0xB9 => self.cp_r_r(Register8::A, Register8::C),                                             //CP A, C
-                    0xBA => self.cp_r_r(Register8::A, Register8::D),                                             //CP A, D
-                    0xBB => self.cp_r_r(Register8::A, Register8::E),                                             //CP A, E
-                    0xBC => self.cp_r_r(Register8::A, Register8::H),                                             //CP A, H
-                    0xBD => self.cp_r_r(Register8::A, Register8::L),                                             //CP A, L
-                    0xBE => self.cpi_r_rr(memory, Register8::A, Register16::HL),                                      //CP A, (HL)
-                    0xBF => self.cp_r_r(Register8::A, Register8::A),                                             //CP A, A
-                    0xC0 => {                                                                                                   //RET NZ
-                        if self.registers.get_flag(Flags::N) && self.registers.get_flag(Flags::Z) {
-                            self.ret(memory);
-                            cycles += 12;
-                        }
-                    },
-                    0xC1 => self.pop_rr(memory, Register16::BC),                                                       //POP BC
-                    0xC2 => {                                                                                                   //JP NZ, u16
-                        let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        if self.registers.get_flags(Flags::N) && self.registers.get_flags(Flags::Z) {
-                            update_pc = false;
-                            self.pc = d16;
-                            cycles += 4;
-                        }
-                    }
-                    0xC3 => {                                                                                                   //JP u16
-                        let d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        update_pc = false;
-                        self.pc = d16;
-                    },
-                    0xC4 => {                                                                                                   //CALL NZ,u16
-                        let d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        if self.registers.get_flags(Flags::N) && self.registers.get_flags(Flags::Z) {
-                            update_pc = self.call(memory, d16);
-                            cycles += 12;
-                        }
-                    },
-                    0xC5 => self.push_rr(memory, Register16::BC),                                                      //PUSH BC
-                    0xC6 => self.add_r_u8(memory, Register8::A),                                                      //ADD A, u8
-                    0xC7 => update_pc = self.rst(memory, 0x00),                                                             //RST 00
-                    0xC8 => {                                                                                                   //RET Z
-                        if self.registers.get_flag(Flags::Z) {
-                            self.ret(memory);
-                            cycles += 12;
-                        }
-                    },
-                    0xC9 => self.ret(memory),                                                                                   //RET
-                    0xCA => {                                                                                                   //JP Z, u16
-                        let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        if self.registers.get_flags(Flags::Z) {
-                            update_pc = false;
-                            self.pc = d16;
-                            cycles += 4;
-                        }
-                    },
-                    0xCC => {                                                                                                   //CALL Z, u16
-                        let d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        if self.registers.get_flags(Flags::Z) {
-                            update_pc = self.call(memory, d16);
-                            cycles += 12;
-                        }
-                    },
-                    0xCD => {                                                                                                   //CALL u16
-                        let d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        update_pc = self.call(memory, d16);
-                    },
-                    0xCE => self.adc_r_u8(memory, Targets::A),                                                       //ADC A, u8
-                    0xCF => update_pc = self.rst(memory, 0x08),                                                             //RST 08h
-                    0xD0 => {                                                                                                   //RET NC
-                        if self.registers.get_flag(Flags::N) && self.registers.get_flag(Flags::C) {
-                            self.ret(memory);
-                            cycles += 12;
-                        }
-                    },
-                    0xD1 => self.pop_rr(memory, Register16::DE),                                                       //POP DE
-                    0xD2 => {                                                                                                   //JP NC, u16
-                        let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        if self.registers.get_flags(Flags::N) && self.registers.get_flags(Flags::C) {
-                            update_pc = false;
-                            self.pc = d16;
-                            cycles += 4;
-                        }
-                    },
-                    0xD4 => {                                                                                                   //CALL NC,u16
-                        let d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        if self.registers.get_flags(Flags::N) && self.registers.get_flags(Flags::C) {
-                            update_pc = self.call(memory, d16);
-                            cycles += 12;
-                        }
-                    },
-                    0xD5 => self.push_rr(memory, Register16::DE),                                                      //PUSH DE
-                    0xD6 => self.sub_r_u8(memory, Targets::A),                                                       //SUB A, u8
-                    0xD7 => update_pc = self.rst(memory, 0x10),                                                             //RST 10h
-                    0xD8 => {                                                                                                   //RET Z
-                        if self.registers.get_flag(Flags::C) {
-                            self.ret(memory);
-                            cycles += 12;
-                        }
-                    },
-                    0xD9 => {                                                                                                   //RETI
-                        self.interrupts.set_ime();
-                        self.ret(memory);
-                    },
-                    0xDA => {                                                                                                   //JP C, u16
-                        let mut d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        if self.registers.get_flags(Flags::C) {
-                            update_pc = false;
-                            self.pc = d16;
-                            cycles += 4;
-                        }
-                    },
-                    0xDC => {                                                                                                   //CALL C, u16
-                        let d16 = memory.read(self.pc + 1) as u16 + ((memory.read(self.pc + 2) as u16) << 8);
-                        if self.registers.get_flags(Flags::C) {
-                            update_pc = self.call(memory, d16);
-                            cycles += 12;
-                        }
-                    },
-                    0xDE => self.sbc_r_u8(memory, Register8::A),                                                      //SBC A, u8
-                    0xDF => update_pc = self.rst(memory, 0x18),                                                             //RS 18h
-                    0xE0 => self.lsm8_st_extended(memory, Register8::A, true),                                   //LD (FF00+u8), A
-                    0xE1 => self.pop_rr(memory, Register16::HL),                                                       //POP HL
-                    0xE2 => self.lsm8_st_extended(memory, Register8::A, false),                                  //LD (FF00+C), A
-                    0xE5 => self.push_rr(memory, Register16::HL),                                                      //PUSH HL
-                    0xE6 => self.and_r_u8(memory, Register8::A),                                                      //AND A, u8
-                    0xE7 => update_pc = self.rst(memory, 0x20),                                                             //RST 20h
-                    0xE8 => self.add_sp_i8(memory),                                                                       //ADD SP, i8
-                    0xE9 => {                                                                                                   //JP HL
-                        let d16 = self.registers.get16(Register16::HL);
-                        update_pc = false;
-                        self.pc = d16;
-                    },
-                    0xEA => self.sti_u16_r(memory, Register8::A),                                                           //LD (u16), A
-                    0xEE => self.xor_r_u8(memory, Register8::A),                                                      //XOR A, u8
-                    0xEF => update_pc = self.rst(memory, 0x28),                                                             //RST 28h
-                    0xF0 => self.lsm8_ld_extended(memory, Register8::A, true),                                   //LD A, (FF00+u8)
-                    0xF1 => self.pop_rr(memory, Register16::AF),                                                       //POP AF
-                    0xF2 => self.lsm8_ld_extended(memory, Register8::A, false),                                  //LD A, (FF00+C)
-                    0xF3 => self.interrupts.reset_ime(),                                                                         //DI (Disable interrupts) TODO
-                    0xF5 => self.push_rr(memory, Register16::AF),                                                      //PUSH AF
-                    0xF6 => self.or_r_u8(memory, Register8::A),                                                       //OR A, u8
-                    0xF7 => update_pc = self.rst(memory, 0x30),                                                             //RST 30h
-                    0xF8 => self.alu16_ld_spimm(memory, Register16::HL),                                                    //LD HL, SP+i8
-                    0xF9 => self.sp = self.registers.get16(Register16::HL),                                                   //LD SP, HL
-                    0xFA => self.ldi_r_u16(memory, Register8::A),                                                       //LD A, (u16)
-                    0xFB => self.interrupts.set_ime(),                                                                           //EI (Enable interrupts) TODO
-                    0xFE => self.cp_r_u8(memory, Register8::A),                                                       //CP A, u8
-                    0xFF => update_pc = self.rst(memory, 0x38),                                                             //RST 38h
+                    0x7F=> self.ld_r_r(cycle, Register8::A, Register8::A),                                                      //LD A, A
+                    0x80 => self.add_r_r(cycle, Register8::A, Register8::B),                                            //ADD A, B
+                    0x81 => self.add_r_r(cycle, Register8::A, Register8::C),                                            //ADD A, C
+                    0x82 => self.add_r_r(cycle, Register8::A, Register8::D),                                            //ADD A, D
+                    0x83 => self.add_r_r(cycle, Register8::A, Register8::E),                                            //ADD A, E
+                    0x84 => self.add_r_r(cycle, Register8::A, Register8::H),                                            //ADD A, H
+                    0x85 => self.add_r_r(cycle, Register8::A, Register8::L),                                            //ADD A, L
+                    0x86 => self.addi_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //ADD A, (HL)
+                    0x87 => self.add_r_r(cycle, Register8::A, Register8::A),                                            //ADD A, A
+                    0x88 => self.adc_r_r(cycle, Register8::A, Register8::B),                                            //ADC A, B
+                    0x89 => self.adc_r_r(cycle, Register8::A, Register8::C),                                            //ADC A, C
+                    0x8A => self.adc_r_r(cycle, Register8::A, Register8::D),                                            //ADC A, D
+                    0x8B => self.adc_r_r(cycle, Register8::A, Register8::E),                                            //ADC A, E
+                    0x8C => self.adc_r_r(cycle, Register8::A, Register8::H),                                            //ADC A, H
+                    0x8D => self.adc_r_r(cycle, Register8::A, Register8::L),                                            //ADC A, L
+                    0x8E => self.adci_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //ADC A, (HL)
+                    0x8F => self.adc_r_r(cycle, Register8::A, Register8::A),                                            //ADC A, A
+                    0x90 => self.sub_r_r(cycle, Register8::A, Register8::B),                                            //SUB A, B
+                    0x91 => self.sub_r_r(cycle, Register8::A, Register8::C),                                            //SUB A, C
+                    0x92 => self.sub_r_r(cycle, Register8::A, Register8::D),                                            //SUB A, D
+                    0x93 => self.sub_r_r(cycle, Register8::A, Register8::E),                                            //SUB A, E
+                    0x94 => self.sub_r_r(cycle, Register8::A, Register8::H),                                            //SUB A, H
+                    0x95 => self.sub_r_r(cycle, Register8::A, Register8::L),                                            //SUB A, L
+                    0x96 => self.sub_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //SUB A, (HL)
+                    0x97 => self.sub_r_r(cycle, Register8::A, Register8::A),                                            //SUB A, A
+                    0x98 => self.sbc_r_r(cycle, Register8::A, Register8::B),                                                           //SBC A, B
+                    0x99 => self.sbc_r_r(cycle, Register8::A, Register8::C),                                                           //SBC A, C
+                    0x9A => self.sbc_r_r(cycle, Register8::A, Register8::D),                                                           //SBC A, D
+                    0x9B => self.sbc_r_r(cycle, Register8::A, Register8::E),                                                           //SBC A, E
+                    0x9C => self.sbc_r_r(cycle, Register8::A, Register8::H),                                                           //SBC A, H
+                    0x9D => self.sbc_r_r(cycle, Register8::A, Register8::L),                                                           //SBC A, L
+                    0x9E => self.sbci_r_rr(cycle, memory, Register8::A, Register16::HL),                                                //SBC A, (HL)
+                    0x9F => self.sbc_r_r(cycle, Register8::A, Register8::A),                                                           //SBC A, A
+                    0xA0 => self.and_r_r(cycle, Register8::A, Register8::B),                                            //AND A, B
+                    0xA1 => self.and_r_r(cycle, Register8::A, Register8::C),                                            //AND A, C
+                    0xA2 => self.and_r_r(cycle, Register8::A, Register8::D),                                            //AND A, D
+                    0xA3 => self.and_r_r(cycle, Register8::A, Register8::E),                                            //AND A, E
+                    0xA4 => self.and_r_r(cycle, Register8::A, Register8::H),                                            //AND A, H
+                    0xA5 => self.and_r_r(cycle, Register8::A, Register8::L),                                            //AND A, L
+                    0xA6 => self.andi_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //AND A, (HL)
+                    0xA7 => self.and_r_r(cycle, Register8::A, Register8::A),                                            //AND A, A
+                    0xA8 => self.xor_r_r(cycle, Register8::A, Register8::B),                                            //XOR A, B
+                    0xA9 => self.xor_r_r(cycle, Register8::A, Register8::C),                                            //XOR A, C
+                    0xAA => self.xor_r_r(cycle, Register8::A, Register8::D),                                            //XOR A, D
+                    0xAB => self.xor_r_r(cycle, Register8::A, Register8::E),                                            //XOR A, E
+                    0xAC => self.xor_r_r(cycle, Register8::A, Register8::H),                                            //XOR A, H
+                    0xAD => self.xor_r_r(cycle, Register8::A, Register8::L),                                            //XOR A, L
+                    0xAE => self.xori_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //XOR A, (HL)
+                    0xAF => self.xor_r_r(cycle, Register8::A, Register8::A),                                            //XOR A, A
+                    0xB0 => self.or_r_r(cycle, Register8::A, Register8::B),                                             //OR A, B
+                    0xB1 => self.or_r_r(cycle, Register8::A, Register8::C),                                             //OR A, C
+                    0xB2 => self.or_r_r(cycle, Register8::A, Register8::D),                                             //OR A, D
+                    0xB3 => self.or_r_r(cycle, Register8::A, Register8::E),                                             //OR A, E
+                    0xB4 => self.or_r_r(cycle, Register8::A, Register8::H),                                             //OR A, H
+                    0xB5 => self.or_r_r(cycle, Register8::A, Register8::L),                                             //OR A, L
+                    0xB6 => self.ori_r_rr(cycle, memory, Register8::A, Register16::HL),                                      //OR A, (HL)
+                    0xB7 => self.or_r_r(cycle, Register8::A, Register8::A),                                             //OR A, A
+                    0xB8 => self.cp_r_r(cycle, Register8::A, Register8::B),                                             //CP A, B
+                    0xB9 => self.cp_r_r(cycle, Register8::A, Register8::C),                                             //CP A, C
+                    0xBA => self.cp_r_r(cycle, Register8::A, Register8::D),                                             //CP A, D
+                    0xBB => self.cp_r_r(cycle, Register8::A, Register8::E),                                             //CP A, E
+                    0xBC => self.cp_r_r(cycle, Register8::A, Register8::H),                                             //CP A, H
+                    0xBD => self.cp_r_r(cycle, Register8::A, Register8::L),                                             //CP A, L
+                    0xBE => self.cpi_r_rr(cycle, memory, Register8::A, Register16::HL),                                      //CP A, (HL)
+                    0xBF => self.cp_r_r(cycle, Register8::A, Register8::A),                                             //CP A, A
+                    0xC0 => self.ret(cycle, memory, vec![Flags::N, Flags::Z]),                                         //RET NZ
+                    0xC1 => self.pop_rr(cycle, memory, Register16::BC),                                                  //POP BC
+                    0xC2 => self.jp_u16(cycle, memory, vec![Flags::N, Flags::Z]),                                       //JP NZ, u16
+                    0xC3 => self.jp_u16(cycle, memory, vec![]),                                                         //JP u16
+                    0xC4 => self.call(cycle, memory,vec![Flags::N, Flags::Z]),                                          //CALL NZ,u16
+                    0xC5 => self.push_rr(cycle, memory, Register16::BC),                                                    //PUSH BC
+                    0xC6 => self.add_r_u8(cycle, memory, Register8::A),                                                         //ADD A, u8
+                    0xC7 => self.rst(cycle, memory, 0x00),                                                                  //RST 00
+                    0xC8 => self.ret(cycle, memory, vec![Flags::Z]),                                                    //RET Z
+                    0xC9 => self.ret(cycle, memory, vec![]),                                                            //RET
+                    0xCA => self.jp_u16(cycle, memory, vec![Flags::Z]),                                                          //JP Z, u16
+                    0xCC => self.call(cycle, memory, vec![Flags::Z]),                                                   //CALL Z, u16
+                    0xCD => self.call(cycle, memory, vec![]),                                                             //CALL u16
+                    0xCE => self.adc_r_u8(cycle, memory, Targets::A),                                                           //ADC A, u8
+                    0xCF => self.rst(cycle, memory, 0x08),                                                                  //RST 08h
+                    0xD0 => self.ret(cycle, memory, vec![Flags::N, Flags::C])  ,                                        //RET NC
+                    0xD1 => self.pop_rr(cycle, memory, Register16::DE),                                                   //POP DE
+                    0xD2 => self.jp_u16(cycle, memory, vec![Flags::N, Flags::C]),                                      //JP NC, u16
+                    0xD4 => self.call(cycle, memory, vec![Flags::N, Flags::C]),                                        //CALL NC,u16
+                    0xD5 => self.push_rr(cycle, memory, Register16::DE),                                                 //PUSH DE
+                    0xD6 => self.sub_r_u8(cycle, memory, Targets::A),                                                           //SUB A, u8
+                    0xD7 => self.rst(cycle, memory, 0x10),                                                                  //RST 10h
+                    0xD8 => self.ret(cycle, memory, vec![Flags::C])                                                    //RET C
+                    0xD9 => self.reti(cycle, memory),                                                                          //RETI
+                    0xDA => self.jp_u16(cycle, memory, vec![Flags::C]),                                               //JP C, u16
+                    0xDC => self.call(cycle, memory, vec![Flags::C]),                                                //CALL C, u16
+                    0xDE => self.sbc_r_u8(cycle, memory, Register8::A),                                                      //SBC A, u8
+                    0xDF => self.rst(cycle, memory, 0x18),                                                             //RS 18h
+                    0xE0 => self.st_extended_u8(cycle, memory, Register8::A),                                   //LD (FF00+u8), A
+                    0xE1 => self.pop_rr(cycle, memory, Register16::HL),                                                       //POP HL
+                    0xE2 => self.st_extended_r(cycle, memory, Register8::A),                                  //LD (FF00+C), A
+                    0xE5 => self.push_rr(cycle, memory, Register16::HL),                                                      //PUSH HL
+                    0xE6 => self.and_r_u8(cycle, memory, Register8::A),                                                      //AND A, u8
+                    0xE7 => self.rst(cycle, memory, 0x20),                                                             //RST 20h
+                    0xE8 => self.add_sp_i8(cycle, memory),                                                                       //ADD SP, i8
+                    0xE9 => self.jp_rr(cycle, Register16::HL),                                                     //JP HL
+                    0xEA => self.sti_u16_r(cycle, memory, Register8::A),                                                           //LD (u16), A
+                    0xEE => self.xor_r_u8(cycle, memory, Register8::A),                                                      //XOR A, u8
+                    0xEF => self.rst(cycle, memory, 0x28),                                                             //RST 28h
+                    0xF0 => self.ld_extended_u8(cycle, memory, Register8::A),                                   //LD A, (FF00+u8)
+                    0xF1 => self.pop_rr(cycle, memory, Register16::AF),                                                       //POP AF
+                    0xF2 => self.ld_extended_r(cycle, memory, Register8::A),                                  //LD A, (FF00+C)
+                    0xF3 => self.di(cycle),                                                                         //DI (Disable interrupts)
+                    0xF5 => self.push_rr(cycle, memory, Register16::AF),                                                      //PUSH AF
+                    0xF6 => self.or_r_u8(cycle, memory, Register8::A),                                                       //OR A, u8
+                    0xF7 => self.rst(cycle, memory, 0x30),                                                             //RST 30h
+                    0xF8 => self.ld_rr_spi8(cycle, memory, Register16::HL),                                                    //LD HL, SP+i8
+                    0xF9 => self.ld_sp_rr(cycle, Register16::HL),                                                   //LD SP, HL
+                    0xFA => self.ldi_r_u16(cycle, memory, Register8::A),                                                       //LD A, (u16)
+                    0xFB => self.ei(cycle),                                                                           //EI (Enable interrupts)
+                    0xFE => self.cp_r_u8(cycle, memory, Register8::A),                                                       //CP A, u8
+                    0xFF => self.rst(cycle, memory, 0x38),                                                             //RST 38h
                     _ => ()
                 }
             },
@@ -536,64 +444,164 @@ impl CPU {
         }
     }
 
-    //st (0xFF + u8), R OR st (0xFF + C), R
-    fn lsm8_ld_extended(&mut self, memory:&mut Memory, register: Register8, immediate: boolean) {
-        let mut addr: u16 = if immediate { 0xFF00 + self.fetch_u8_immdiate(memory) as u16 } else { 0xFF00 + self.registers.get8(Register8::C) as u16 };
-        let val = memory.read(addr);
-        self.registers.set8(register, val);
-    }
-
     //ldi R1, (R2)
     fn ldi_r_rr(&mut self, cycle: u32, memory: &mut Memory, register1: Register8, register2: Register16) {
-        if cycle == 4 {
+        if cycle == 8 {
             let addr = self.registers.get16(register2);
             let val = memory.read(addr);
             self.registers.set8(register1, val);
-        } else if cycle == 8 {
+            self.instr_state = None;
+        }
+    }
+
+    //ldi R1, (R2+)
+    fn ldi_r_rr_inc(&mut self, cycle: u32, memory: &mut Memory, register1: Register8, register2: Register16) {
+       if cycle == 8 {
+           let addr = self.registers.get16(register2);
+           let val = memory.read(addr);
+           self.registers.set8(register1, val);
+           let res = addr.overflowing_add(1);
+           self.registers.set16(register2, res.0);
+           self.instr_state = None;
+        }
+    }
+
+    //ldi R1, (R2-)
+    fn ldi_r_rr_dec(&mut self, cycle: u32, memory: &mut Memory, register1: Register8, register2: Register16) {
+        if cycle == 8 {
+            let addr = self.registers.get16(register2);
+            let val = memory.read(addr);
+            self.registers.set8(register1, val);
+            let res = addr.overflowing_sub(1);
+            self.registers.set16(register2, res.0);
             self.instr_state = None;
         }
     }
 
     //ldi R, (u16)
-    fn ldi_r_u16(&mut self, memory: &mut Memory, register: Register8) {
-        let mut addr= self.fetch_u16_immediate(memory);
-        let val = memory.read(addr);
-        self.registers.set8(register, val);
+    fn ldi_r_u16(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        if cycle == 8 {
+            *state.intermediate = memory.read(self.pc + 1) as u16;
+        } else if cycle == 12 {
+            *state.intermediate = *state.intermediate + ((memory.read(self.pc + 2) as u16) << 8);
+        } else if cycle == 16 {
+            self.registers.set8(register, memory.read(*state.intermediate));
+            self.instr_state = None;
+        }
     }
 
     //st (u16), R
-    fn sti_u16_r(&mut self, memory: &mut Memory, register: Register8) {
-        let mut addr= self.fetch_u16_immediate(memory);
-        let val = self.registers.get8(register);
-        memory.write(addr, val);
+    fn sti_u16_r(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        if cycle == 8 {
+            *state.intermediate = memory.read(self.pc + 1) as u16;
+        } else if cycle == 12 {
+            *state.intermediate = *state.intermediate + ((memory.read(self.pc + 2) as u16) << 8);
+        } else if cycle == 16 {
+            memory.write(*state.intermediate, self.registers.get8(register));
+            self.instr_state = None;
+        }
     }
 
-    //st (0xFF + u8), R OR st (0xFF + C), R
-    fn lsm8_st_extended(&mut self, memory:&mut Memory, register: Register8, immediate: boolean) {
-        let mut addr: u16 = if immediate { 0xFF00 + self.fetch_u8_immdiate(memory) as u16 } else { 0xFF00 + self.registers.get8(Register8::C) as u16 };
-        let val = self.registers.get8(register);
-        memory.write(addr, val);
+    //ST A, (FF00+u8)
+    fn st_extended_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 12 {
+            let offset = memory.read(self.pc + 1);
+            let addr: u16 = 0xFF00 + offset as u16;
+            memory.write(addr, self.registers.get8(register));
+            self.instr_state = None;
+        }
     }
-    
+
+    //ST A, (FF00+C)
+    fn st_extended_r(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let offset = self.registers.get8(Register8::C);
+            let addr: u16 = 0xFF00 + offset as u16;
+            memory.write(addr, self.registers.get8(register));
+            self.instr_state = None;
+        }
+    }
+
+    //LD A, (FF00+u8)
+    fn ld_extended_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 12 {
+            let offset = memory.read(self.pc + 1);
+            let addr: u16 = 0xFF00 + offset as u16;
+            let val = memory.read(addr);
+            self.registers.set8(register, val);
+            self.instr_state = None;
+        }
+    }
+
+    //LD A, (FF00+C)
+    fn ld_extended_r(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let offset = self.registers.get8(Register8::C);
+            let addr: u16 = 0xFF00 + offset as u16;
+            let val = memory.read(addr);
+            self.registers.set8(register, val);
+            self.instr_state = None;
+        }
+    }
+
     //sti (R1), R2
     fn sti_rr_r(&mut self, cycle: u32, memory: &mut Memory, register1: Register16, register2: Register8) {
         if cycle == 8 {
             let addr = self.registers.get16(register1);
             let val = self.registers.get8(register2);
             memory.write(addr, val);
+            self.instr_state = None;
+        }
+    }
+
+    //sti (R1+), R2
+    fn sti_rr_r_inc(&mut self, cycle: u32, memory: &mut Memory, register1: Register16, register2: Register8) {
+        if cycle == 8 {
+            let addr = self.registers.get16(register1);
+            let val = self.registers.get8(register2);
+            memory.write(addr, val);
+            let res = addr.overflowing_add(1);
+            self.registers.set16(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //sti (R1-), R2
+    fn sti_rr_r_dec(&mut self, cycle: u32, memory: &mut Memory, register1: Register16, register2: Register8) {
+        if cycle == 8 {
+            let addr = self.registers.get16(register1);
+            let val = self.registers.get8(register2);
+            memory.write(addr, val);
+            let res = addr.overflowing_sub(1);
+            self.registers.set16(register1, res.0);
+            self.instr_state = None;
         }
     }
 
     //sti (R), u8
-    fn sti_rr_u8(&mut self, memory: &mut Memory, register: Register16) {
-        let addr = self.registers.get16(register);
-        let val = self.fetch_u8_immdiate(memory);
-        memory.write(addr, val);
+    fn sti_rr_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register16) {
+        if cycle == 12 {
+            let addr = self.registers.get16(register);
+            let val = memory.read(self.pc + 1);
+            memory.write(addr, val);
+            self.instr_state = None;
+        }
     }
 
     //mv R1, R2
-    fn ld_r_r(&mut self, dst: Register8, src: Register8) {
-        self.registers.set8(dst, self.registers.get8(src));
+    fn ld_r_r(&mut self, cycle: u32, dst: Register8, src: Register8) {
+        if cycle == 4 {
+            self.registers.set8(dst, self.registers.get8(src));
+            self.instr_state = None;
+        }
     }
 
     /*
@@ -619,8 +627,21 @@ impl CPU {
         }
     }
 
+    fn ld_sp_u16(&mut self, cycle: u32, memory: &mut Memory) {
+        if cycle == 8 {
+            let val = memory.read(self.pc + 1);
+            self.sp = self.sp & 0xFF00;
+            self.sp = self.sp + val;
+        } else if cycle == 12 {
+            let val = memory.read(self.pc + 2);
+            self.sp = self.sp & 0x00FF;
+            self.sp = self.sp + ((val as u16) << 8);
+            self.instr_state = None;
+        }
+    }
+
     //st (u16), RR
-    fn lsm16_st(&mut self, memory: &mut Memory, register: Register16) {
+    fn lsm16_st(&mut self, cycle: u32, memory: &mut Memory, register: Register16) {
         let mut addr= self.fetch_u16_immediate(memory);
         let val = self.registers.get16(register);
         let low = (val & 0x00FF) as u8;
@@ -630,22 +651,30 @@ impl CPU {
     }
 
     //push RR
-    fn push_rr(&mut self, memory: &mut Memory, register: Register16) {
-        let val = self.registers.get(register);
-        let high = (val >> 8) as u8;
-        let low = (val & 0x00FF) as u8;
-        memory.write(self.sp - 1, high);
-        memory.write(self.sp - 2, low);
-        self.sp = self.sp - 2;
+    fn push_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register16) {
+        if cycle == 12 {
+            let val = self.registers.get(register) >> 8;
+            self.sp = self.sp - 1;
+            memory.write(self.sp, val);
+        } else if cycle == 16 {
+            let val = self.registers.get(register) >> 8;
+            self.sp = self.sp - 1;
+            memory.write(self.sp, val);
+            self.instr_state = None;
+        }
     }
 
     //pop RR
-    fn pop_rr(&mut self, memory: &mut Memory, register: Register16) {
-        let low = memory.read(self.sp) as u16;
-        let high = memory.read(self.sp + 1) as u16;
-        let val = low + (high << 8);
-        self.registers.set16(register, val);
-        self.sp = self.sp + 2;
+    fn pop_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register16) {
+        let rs = register.sub_registers();
+        if cycle == 8 {
+            self.registers.set8(rs.1,memory.read(self.sp));
+            self.sp = self.sp + 1;
+        } else if cycle == 12 {
+            self.registers.set8(rs.0,memory.read(self.sp));
+            self.sp = self.sp + 1;
+            self.instr_state = None;
+        }
     }
 
     //mv RR1, RR2
@@ -670,6 +699,13 @@ impl CPU {
         } else if cycle == 16 {
             memory.write(*state.intermediate, (self.sp >> 8) as u8);
         } else if cycle == 20 {
+            self.instr_state = None;
+        }
+    }
+
+    fn ld_sp_rr(&mut self, cycle: u32, register: Register16) {
+        if cycle == 8 {
+            self.sp = self.registers.get16(register);
             self.instr_state = None;
         }
     }
@@ -713,407 +749,504 @@ impl CPU {
         * CP R, (RR)
      */
     //Increment 8-bit register and set ZNH accordingly
-    fn inc_r(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let res = val.overflowing_add(1);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if (val & 0xF) + 1  > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register, res.0);
-        self.instr_state = None;
+    fn inc_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 1 {
+            let val = self.registers.get8(register);
+            let res = val.overflowing_add(1);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if (val & 0xF) + 1 > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register, res.0);
+        } else if cycle == 4 {
+            self.instr_state = None;
+        }
     }
 
-    fn alu8_inci(&mut self, memory: &mut Memory, pair: Register16) {
-        let mut addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let res = val.overflowing_add(1);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if (val & 0xF) + 1  > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        memory.write(addr, res.0);
+    fn inci_rr(&mut self, cycle: u32, memory: &mut Memory, pair: Register16) {
+        if cycle == 12 {
+            let mut addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let res = val.overflowing_add(1);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if (val & 0xF) + 1  > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.unset_flag(Flags::N);
+            memory.write(addr, res.0);
+            self.instr_state = None;
+        }
     }
 
     //Decrement 8-bit register and set ZNH accordingly
-    fn dec_r(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let res = val.overflowing_sub(1);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if (val & 0xF) - 1  > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
-        self.registers.set8(register, res.0);
-        self.instr_state = None;
-    }
-
-    fn alu8_deci(&mut self, memory: &mut Memory, pair: Register16) {
-        let mut addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let res = val.overflowing_sub(1);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if (val & 0xF) - 1  > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
-        memory.write(addr, res.0);
-    }
-
-    //add r1, r2
-    fn add_r_r(&mut self, register1: Register8, register2: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.registers.get8(register2);
-        let res = v1.overflowing_add(v2);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if (v1 & 0xF) + (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
-    }
-    //add r, u8
-    fn add_r_u8(&mut self, memory: &mut Memory, register: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.fetch_u8_immdiate(memory);
-        let res = v1.overflowing_add(v2);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if (v1 & 0xF) + (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
-    }
-    //add r, (rr)
-    fn addi_r_rr(&mut self, memory: &mut Memory, register: Register8, pair: Register16) {
-        let v1 = self.registers.get8(register);
-        let addr = self.registers.get16(pair);
-        let v2 = memory.read(addr);
-        let res = v1.overflowing_add(v2);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if (v1 & 0xF) + (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
-    }
-
-    //add r1, r2
-    fn sub_r_r(&mut self, register1: Register8, register2: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.registers.get8(register2);
-        let res = v1.overflowing_sub(v2);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
-        self.registers.set8(register1, res.0);
-    }
-    //add r, u8
-    fn sub_r_u8(&mut self, memory: &mut Memory, register: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.fetch_u8_immdiate(memory);
-        let res = v1.overflowing_sub(v2);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
-        self.registers.set8(register1, res.0);
-    }
-    //add r, (rr)
-    fn sub_r_rr(&mut self, memory: &mut Memory, register: Register8, pair: Register16) {
-        let v1 = self.registers.get8(register);
-        let addr = self.registers.get16(pair);
-        let v2 = memory.read(addr);
-        let res = v1.overflowing_sub(v2);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
-        self.registers.set8(register1, res.0);
-    }
-
-    //add r1, r2
-    fn adc_r_r(&mut self, register1: Register8, register2: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.registers.get8(register2);
-        let mut res = v1.overflowing_add(v2);
-        let mut half_carry = (v1 & 0xF) + (v2 & 0xF) > 0xF;
-        let mut carry = res.1;
-        if self.registers.get_flag(Flags::C) {
-            if !half_carry { half_carry = (res.0 & 0xF) + 1 > 0xF }
-            res = res.0.overflowing_add(1);
-            if !carry { carry = res.1 }
+    fn dec_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 1 {
+            let val = self.registers.get8(register);
+            let res = val.overflowing_sub(1);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if (val & 0xF) - 1 > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            self.registers.set8(register, res.0);
+        } else if cycle == 4 {
+            self.instr_state = None;
         }
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
     }
 
-    //add r, u8
-    fn adc_r_u8(&mut self, memory: &mut Memory, register: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.fetch_u8_immdiate(memory);
-        let mut res = v1.overflowing_add(v2);
-        let mut half_carry = (v1 & 0xF) + (v2 & 0xF) > 0xF;
-        let mut carry = res.1;
-        if self.registers.get_flag(Flags::C) {
-            if !half_carry { half_carry = (res.0 & 0xF) + 1 > 0xF }
-            res = res.0.overflowing_add(1);
-            if !carry { carry = res.1 }
+    fn deci_rr(&mut self, cycle: u32, memory: &mut Memory, pair: Register16) {
+        if cycle == 12 {
+            let mut addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let res = val.overflowing_sub(1);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if (val & 0xF) - 1 > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            memory.write(addr, res.0);
+            self.instr_state = None;
         }
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
-    }
-
-    //add r, (rr)
-    fn adci_r_rr(&mut self, memory: &mut Memory, register: Register8, pair: Register16) {
-        let v1 = self.registers.get8(register1);
-        let addr = self.registers.get16(pair);
-        let v2 = memory.read(addr);
-        let mut res = v1.overflowing_add(v2);
-        let mut half_carry = (v1 & 0xF) + (v2 & 0xF) > 0xF;
-        let mut carry = res.1;
-        if self.registers.get_flag(Flags::C) {
-            if !half_carry { half_carry = (res.0 & 0xF) + 1 > 0xF }
-            res = res.0.overflowing_add(1);
-            if !carry { carry = res.1 }
-        }
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
     }
 
     //add r1, r2
-    fn sbc_r_r(&mut self, register1: Register8, register2: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.registers.get8(register2);
-        let mut res = v1.overflowing_sub(v2);
-        let mut half_carry = (v1 & 0xF) - (v2 & 0xF) > 0xF;
-        let mut carry = res.1;
-        if self.registers.get_flag(Flags::C) {
-            if !half_carry { half_carry = (res.0 & 0xF) - 1 > 0xF }
-            res = res.0.overflowing_sub(1);
-            if !carry { carry = res.1 }
+    fn add_r_r(&mut self, cycle: u32, register1: Register8, register2: Register8) {
+        if cycle == 4 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.registers.get8(register2);
+            let res = v1.overflowing_add(v2);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if (v1 & 0xF) + (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
         }
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
-        self.registers.set8(register1, res.0);
     }
-
     //add r, u8
-    fn sbc_r_u8(&mut self, memory: &mut Memory, register: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.fetch_u8_immdiate(memory);
-        let mut res = v1.overflowing_sub(v2);
-        let mut half_carry = (v1 & 0xF) - (v2 & 0xF) > 0xF;
-        let mut carry = res.1;
-        if self.registers.get_flag(Flags::C) {
-            if !half_carry { half_carry = (res.0 & 0xF) - 1 > 0xF }
-            res = res.0.overflowing_sub(1);
-            if !carry { carry = res.1 }
+    fn add_r_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.fetch_u8_immdiate(memory);
+            let res = v1.overflowing_add(v2);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if (v1 & 0xF) + (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
         }
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
-        self.registers.set8(register1, res.0);
     }
 
     //add r, (rr)
-    fn sbci_r_rr(&mut self, memory: &mut Memory, register: Register8, pair: Register16) {
-        let v1 = self.registers.get8(register1);
-        let addr = self.registers.get16(pair);
-        let v2 = memory.read(addr);
-        let mut res = v1.overflowing_sub(v2);
-        let mut half_carry = (v1 & 0xF) - (v2 & 0xF) > 0xF;
-        let mut carry = res.1;
-        if self.registers.get_flag(Flags::C) {
-            if !half_carry { half_carry = (res.0 & 0xF) - 1 > 0xF }
-            res = res.0.overflowing_sub(1);
-            if !carry { carry = res.1 }
+    fn addi_r_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register8, pair: Register16) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register);
+            let addr = self.registers.get16(pair);
+            let v2 = memory.read(addr);
+            let res = v1.overflowing_add(v2);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if (v1 & 0xF) + (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
         }
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
     }
 
     //add r1, r2
-    fn and_r_r(&mut self, register1: Register8, register2: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.registers.get8(register2);
-        let res = v1 & v2;
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::C);
-        self.registers.set_flag(Flags::H);
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
+    fn sub_r_r(&mut self, cycle: u32, register1: Register8, register2: Register8) {
+        if cycle == 4 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.registers.get8(register2);
+            let res = v1.overflowing_sub(v2);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
     }
-
     //add r, u8
-    fn and_r_u8(&mut self, memory: &mut Memory, register: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.fetch_u8_immdiate(memory);
-        let res = v1 & v2;
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::C);
-        self.registers.set_flag(Flags::H);
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
+    fn sub_r_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.fetch_u8_immdiate(memory);
+            let res = v1.overflowing_sub(v2);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
     }
-
     //add r, (rr)
-    fn andi_r_rr(&mut self, memory: &mut Memory, register: Register8, pair: Register16) {
-        let v1 = self.registers.get8(register);
-        let addr = self.registers.get16(pair);
-        let v2 = memory.read(addr);
-        let res = v1 & v2;
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::C);
-        self.registers.set_flag(Flags::H);
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
+    fn sub_r_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register8, pair: Register16) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register);
+            let addr = self.registers.get16(pair);
+            let v2 = memory.read(addr);
+            let res = v1.overflowing_sub(v2);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
     }
 
     //add r1, r2
-    fn xor_r_r(&mut self, register1: Register8, register2: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.registers.get8(register2);
-        let res = v1 ^ v2;
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::C);
-        self.registers.unset_flag(Flags::H);
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
+    fn adc_r_r(&mut self, cycle: u32, register1: Register8, register2: Register8) {
+        if cycle == 4 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.registers.get8(register2);
+            let mut res = v1.overflowing_add(v2);
+            let mut half_carry = (v1 & 0xF) + (v2 & 0xF) > 0xF;
+            let mut carry = res.1;
+            if self.registers.get_flag(Flags::C) {
+                if !half_carry { half_carry = (res.0 & 0xF) + 1 > 0xF }
+                res = res.0.overflowing_add(1);
+                if !carry { carry = res.1 }
+            }
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
     }
 
     //add r, u8
-    fn xor_r_u8(&mut self, memory: &mut Memory, register: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.fetch_u8_immdiate(memory);
-        let res = v1 ^ v2;
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::C);
-        self.registers.unset_flag(Flags::H);
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
+    fn adc_r_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.fetch_u8_immdiate(memory);
+            let mut res = v1.overflowing_add(v2);
+            let mut half_carry = (v1 & 0xF) + (v2 & 0xF) > 0xF;
+            let mut carry = res.1;
+            if self.registers.get_flag(Flags::C) {
+                if !half_carry { half_carry = (res.0 & 0xF) + 1 > 0xF }
+                res = res.0.overflowing_add(1);
+                if !carry { carry = res.1 }
+            }
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
     }
 
     //add r, (rr)
-    fn xori_r_rr(&mut self, memory: &mut Memory, register: Register8, pair: Register16) {
-        let v1 = self.registers.get8(register);
-        let addr = self.registers.get16(pair);
-        let v2 = memory.read(addr);
-        let res = v1 ^ v2;
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::C);
-        self.registers.unset_flag(Flags::H);
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
+    fn adci_r_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register8, pair: Register16) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let addr = self.registers.get16(pair);
+            let v2 = memory.read(addr);
+            let mut res = v1.overflowing_add(v2);
+            let mut half_carry = (v1 & 0xF) + (v2 & 0xF) > 0xF;
+            let mut carry = res.1;
+            if self.registers.get_flag(Flags::C) {
+                if !half_carry { half_carry = (res.0 & 0xF) + 1 > 0xF }
+                res = res.0.overflowing_add(1);
+                if !carry { carry = res.1 }
+            }
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
     }
 
     //add r1, r2
-    fn or_r_r(&mut self, register1: Register8, register2: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.registers.get8(register2);
-        let res = v1 | v2;
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::C);
-        self.registers.unset_flag(Flags::H);
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
+    fn sbc_r_r(&mut self, cycle: u32, register1: Register8, register2: Register8) {
+        if cycle == 4 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.registers.get8(register2);
+            let mut res = v1.overflowing_sub(v2);
+            let mut half_carry = (v1 & 0xF) - (v2 & 0xF) > 0xF;
+            let mut carry = res.1;
+            if self.registers.get_flag(Flags::C) {
+                if !half_carry { half_carry = (res.0 & 0xF) - 1 > 0xF }
+                res = res.0.overflowing_sub(1);
+                if !carry { carry = res.1 }
+            }
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
     }
 
     //add r, u8
-    fn or_r_u8(&mut self, memory: &mut Memory, register: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.fetch_u8_immdiate(memory);
-        let res = v1 | v2;
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::C);
-        self.registers.unset_flag(Flags::H);
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
+    fn sbc_r_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.fetch_u8_immdiate(memory);
+            let mut res = v1.overflowing_sub(v2);
+            let mut half_carry = (v1 & 0xF) - (v2 & 0xF) > 0xF;
+            let mut carry = res.1;
+            if self.registers.get_flag(Flags::C) {
+                if !half_carry { half_carry = (res.0 & 0xF) - 1 > 0xF }
+                res = res.0.overflowing_sub(1);
+                if !carry { carry = res.1 }
+            }
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
     }
 
     //add r, (rr)
-    fn ori_r_rr(&mut self, memory: &mut Memory, register: Register8, pair: Register16) {
-        let v1 = self.registers.get8(register);
-        let addr = self.registers.get16(pair);
-        let v2 = memory.read(addr);
-        let res = v1 | v2;
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::C);
-        self.registers.unset_flag(Flags::H);
-        self.registers.unset_flag(Flags::N);
-        self.registers.set8(register1, res.0);
+    fn sbci_r_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register8, pair: Register16) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let addr = self.registers.get16(pair);
+            let v2 = memory.read(addr);
+            let mut res = v1.overflowing_sub(v2);
+            let mut half_carry = (v1 & 0xF) - (v2 & 0xF) > 0xF;
+            let mut carry = res.1;
+            if self.registers.get_flag(Flags::C) {
+                if !half_carry { half_carry = (res.0 & 0xF) - 1 > 0xF }
+                res = res.0.overflowing_sub(1);
+                if !carry { carry = res.1 }
+            }
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if carry { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if half_carry { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
     }
 
     //add r1, r2
-    fn cp_r_r(&mut self, register1: Register8, register2: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.registers.get8(register2);
-        let res = v1.overflowing_sub(v2);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
+    fn and_r_r(&mut self, cycle: u32, register1: Register8, register2: Register8) {
+        if cycle == 4 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.registers.get8(register2);
+            let res = v1 & v2;
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::C);
+            self.registers.set_flag(Flags::H);
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //add r, u8
+    fn and_r_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.fetch_u8_immdiate(memory);
+            let res = v1 & v2;
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::C);
+            self.registers.set_flag(Flags::H);
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //add r, (rr)
+    fn andi_r_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register8, pair: Register16) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register);
+            let addr = self.registers.get16(pair);
+            let v2 = memory.read(addr);
+            let res = v1 & v2;
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::C);
+            self.registers.set_flag(Flags::H);
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //add r1, r2
+    fn xor_r_r(&mut self, cycle: u32, register1: Register8, register2: Register8) {
+        if cycle == 4 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.registers.get8(register2);
+            let res = v1 ^ v2;
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::C);
+            self.registers.unset_flag(Flags::H);
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //add r, u8
+    fn xor_r_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.fetch_u8_immdiate(memory);
+            let res = v1 ^ v2;
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::C);
+            self.registers.unset_flag(Flags::H);
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //add r, (rr)
+    fn xori_r_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register8, pair: Register16) {
+        if cycle == 4 {
+            let v1 = self.registers.get8(register);
+            let addr = self.registers.get16(pair);
+            let v2 = memory.read(addr);
+            let res = v1 ^ v2;
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::C);
+            self.registers.unset_flag(Flags::H);
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //add r1, r2
+    fn or_r_r(&mut self, cycle: u32, register1: Register8, register2: Register8) {
+        if cycle == 4 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.registers.get8(register2);
+            let res = v1 | v2;
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::C);
+            self.registers.unset_flag(Flags::H);
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //add r, u8
+    fn or_r_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.fetch_u8_immdiate(memory);
+            let res = v1 | v2;
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::C);
+            self.registers.unset_flag(Flags::H);
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //add r, (rr)
+    fn ori_r_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register8, pair: Register16) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register);
+            let addr = self.registers.get16(pair);
+            let v2 = memory.read(addr);
+            let res = v1 | v2;
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::C);
+            self.registers.unset_flag(Flags::H);
+            self.registers.unset_flag(Flags::N);
+            self.registers.set8(register1, res.0);
+            self.instr_state = None;
+        }
+    }
+
+    //add r1, r2
+    fn cp_r_r(&mut self, cycle: u32, register1: Register8, register2: Register8) {
+        if cycle == 4 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.registers.get8(register2);
+            let res = v1.overflowing_sub(v2);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            self.instr_state = None;
+        }
     }
     //add r, u8
-    fn cp_r_u8(&mut self, memory: &mut Memory, register: Register8) {
-        let v1 = self.registers.get8(register1);
-        let v2 = self.fetch_u8_immdiate(memory);
-        let res = v1.overflowing_sub(v2);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
+    fn cp_r_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register8) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register1);
+            let v2 = self.fetch_u8_immdiate(memory);
+            let res = v1.overflowing_sub(v2);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            self.instr_state = None;
+        }
     }
     //add r, (rr)
-    fn cpi_r_rr(&mut self, memory: &mut Memory, register: Register8, pair: Register16) {
-        let v1 = self.registers.get8(register);
-        let addr = self.registers.get16(pair);
-        let v2 = memory.read(addr);
-        let res = v1.overflowing_sub(v2);
-        if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        self.registers.set_flag(Flags::N);
+    fn cpi_r_rr(&mut self, cycle: u32, memory: &mut Memory, register: Register8, pair: Register16) {
+        if cycle == 8 {
+            let v1 = self.registers.get8(register);
+            let addr = self.registers.get16(pair);
+            let v2 = memory.read(addr);
+            let res = v1.overflowing_sub(v2);
+            if res.0 == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            self.registers.set_flag(Flags::N);
+            self.instr_state = None;
+        }
     }
 
     //DAA
-    fn daa(&mut self) {
-        let mut adjustment = 0;
-        if self.registers.get_flag(Flags::H) == 1 || (self.registers.get_flag(Flags::N) == 0 && (self.registers.get8(Register8::A) > 9)) {
-            adjustment |= 0x6;
+    fn daa(&mut self, cycle: u32) {
+        if cycle == 4 {
+            let mut adjustment = 0;
+            if self.registers.get_flag(Flags::H) == 1 || (self.registers.get_flag(Flags::N) == 0 && (self.registers.get8(Register8::A) > 9)) {
+                adjustment |= 0x6;
+            }
+            if self.registers.get_flag(Flags::C) == 1 || (self.registers.get_flag(Flags::N) == 0 && (self.registers.get8(Register8::A) > 0x99)) {
+                adjustment |= 0x60;
+                self.registers.set_flag(Flags::C);
+            }
+            if self.registers.get_flag(Flags::N) == 1 { self.registers.set8(Register8::A, (self.registers.get8(Register8::A) + adjustment) & 0xFF) } else { self.registers.set8(Register8::A, (self.registers.get8(Register8::A) - adjustment) & 0xFF) }
+            if self.registers.get8(Register8::A) == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::H);
+            self.instr_state = None;
         }
-        if self.registers.get_flag(Flags::C) == 1 || (self.registers.get_flag(Flags::N) == 0 && (self.registers.get8(Register8::A) > 0x99)) {
-            adjustment |= 0x60;
-            self.registers.set_flag(Flags::C);
+    }
+
+    fn cpl(&mut self, cycle: u32) {
+        if cycle == 4 {
+            let val = self.registers.get8(Register8::A);
+            self.registers.set8(Register8::A, val ^ 0xFF)
+            self.instr_state = None;
         }
-        if self.registers.get_flag(Flags::N) == 1 { self.registers.set8(Register8::A, (self.registers.get8(Register8::A) + adjustment) & 0xFF) } else { self.registers.set8(Register8::A, (self.registers.get8(Register8::A) - adjustment) & 0xFF) }
-        if self.registers.get8(Register8::A) == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::H);
     }
 
-    fn cpl(&mut self) {
-        let val = self.registers.get8(Register8::A);
-        self.registers.set8(Register8::A, val ^ 0xFF)
-    }
-
-    fn scf(&mut self) {
-        self.registers.set_flag(Flags::C);
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
-    }
-
-    fn ccf(&mut self) {
-        if self.registers.get_flag(Flags::C) {
-            self.registers.unset_flag(Flags::C);
-        } else {
+    fn scf(&mut self, cycle: u32) {
+        if cycle == 4 {
             self.registers.set_flag(Flags::C);
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            self.instr_state = None;
+        }
+    }
+
+    fn ccf(&mut self, cycle: u32) {
+        if cycle == 4 {
+            if self.registers.get_flag(Flags::C) {
+                self.registers.unset_flag(Flags::C);
+            } else {
+                self.registers.set_flag(Flags::C);
+            }
+            self.instr_state = None;
         }
     }
 
@@ -1123,15 +1256,17 @@ impl CPU {
      */
 
     //Left circular shift register A
-    fn rlca(&mut self) {
-        let val = self.registers.get8(Targets::A);
-        let high = (val & 0xA0) >> 7;
-        let res = (val << 1) + high;
-        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        self.registers.set8(Register8::A, res);
-        self.registers.unset_flag(Flags::Z);
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
+    fn rlca(&mut self, cycle: u32) {
+        if cycle == 4 {
+            let val = self.registers.get8(Targets::A);
+            let high = (val & 0xA0) >> 7;
+            let res = (val << 1) + high;
+            if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            self.registers.set8(Register8::A, res);
+            self.registers.unset_flag(Flags::Z);
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+        }
     }
 
     //Left circular shift arbitrary 8-bit register
@@ -1160,16 +1295,18 @@ impl CPU {
     }
 
     //Left shift register A through carry
-    fn rla(&mut self) {
-        let val = self.registers.get8(Targets::A);
-        let high = (val & 0xA0) >> 7;
-        let new_low = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
-        let res = (val << 1) + new_low;
-        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        self.registers.set8(Register8::A, res);
-        self.registers.unset_flag(Flags::Z);
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
+    fn rla(&mut self, cycle: u32) {
+        if cycle == 4 {
+            let val = self.registers.get8(Targets::A);
+            let high = (val & 0xA0) >> 7;
+            let new_low = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+            let res = (val << 1) + new_low;
+            if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            self.registers.set8(Register8::A, res);
+            self.registers.unset_flag(Flags::Z);
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+        }
     }
 
     //Left shift arbitrary 8-bit register through carry
@@ -1200,15 +1337,17 @@ impl CPU {
     }
 
     //Right circular shift register A
-    fn rrca(&mut self) {
-        let val = self.registers.get8(Targets::A);
-        let low = val & 0x01;
-        let res = (val >> 1) + (low << 7);
-        if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        self.registers.unset_flag(Flags::Z);
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
-        self.registers.set8(Register8::A, res;
+    fn rrca(&mut self, cycle: u32) {
+        if cycle == 4 {
+            let val = self.registers.get8(Targets::A);
+            let low = val & 0x01;
+            let res = (val >> 1) + (low << 7);
+            if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            self.registers.unset_flag(Flags::Z);
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            self.registers.set8(Register8::A, res);
+        }
     }
 
     //Right circular shift arbitrary 8-bit register
@@ -1237,16 +1376,18 @@ impl CPU {
     }
 
     //Left shift register A through carry
-    fn rra(&mut self) {
-        let val = self.registers.get8(Targets::A);
-        let low = val & 0x0F;
-        let new_high = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
-        let res = (val >> 1) + (new_high << 7);
-        if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        self.registers.set8(Register8::A, res);
-        self.registers.unset_flag(Flags::Z);
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
+    fn rra(&mut self, cycle: u32) {
+        if cycle == 4 {
+            let val = self.registers.get8(Targets::A);
+            let low = val & 0x0F;
+            let new_high = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+            let res = (val >> 1) + (new_high << 7);
+            if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            self.registers.set8(Register8::A, res);
+            self.registers.unset_flag(Flags::Z);
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+        }
     }
 
     //Left shift arbitrary 8-bit register through carry
@@ -1431,18 +1572,36 @@ impl CPU {
         * ADD SP, i8
         * LD HL, SP+i8
      */
-    fn inc_rr(&mut self, cycle: u32, rhigh: Register8, rlow: Register8) {
+    fn inc_rr(&mut self, cycle: u32, rr: Register16) {
+        let rs = rr.sub_registers();
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
         if cycle == 4 {
-            let val = self.registers.get8(rlow);
+            let val = self.registers.get16(register);
             let res = val.overflowing_add(1);
-            self.registers.set8(rlow, res.0);
-            if !res.1 {
-                self.instr_state = None;
-            }
+            *state.intermediate = res.0;
+            self.registers.set8(rs.1, (res.0 & 0xFF) as u8);
         } else if cycle == 8 {
-            let val = self.registers.get8(rhigh);
+            self.registers.set8(rs.0, (*state.intermediate >> 8) as u8);
+            self.instr_state = None;
+        }
+    }
+
+    fn inc_sp(&mut self, cycle: u32) {
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        if cycle == 4 {
+            let val = self.sp;
             let res = val.overflowing_add(1);
-            self.registers.set8(rhigh, res.0);
+            *state.intermediate = res.0;
+            self.sp = self.sp & 0xFF00;
+            self.sp = self.sp + (res.0 & 0xFF);
+        } else if cycle == 8 {
+            self.sp = *state.intermediate;
             self.instr_state = None;
         }
     }
@@ -1452,10 +1611,38 @@ impl CPU {
         self.sp = res.0;
     }
 
-    fn dec_rr(&mut self, register: Register16) {
-        let val = self.registers.get16(register);
-        let res = val.overflowing_sub(1);
-        self.registers.set16(register, res.0);
+    fn dec_rr(&mut self, cycle: u32, register: Register16) {
+        let rs = rr.sub_registers();
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        if cycle == 4 {
+            let val = self.registers.get16(register);
+            let res = val.overflowing_sub(1);
+            *state.intermediate = res.0;
+            self.registers.set8(rs.1, (res.0 & 0xFF) as u8);
+        } else if cycle == 8 {
+            self.registers.set8(rs.0, (*state.intermediate >> 8) as u8);
+            self.instr_state = None;
+        }
+    }
+
+    fn dec_sp(&mut self, cycle: u32) {
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        if cycle == 4 {
+            let val = self.sp;
+            let res = val.overflowing_sub(1);
+            *state.intermediate = res.0;
+            self.sp = self.sp & 0xFF00;
+            self.sp = self.sp + (res.0 & 0xFF);
+        } else if cycle == 8 {
+            self.sp = *state.intermediate;
+            self.instr_state = None;
+        }
     }
 
     fn alu16_decsp(&mut self) {
@@ -1477,73 +1664,196 @@ impl CPU {
         }
     }
 
-    fn add_rr_sp(&mut self, pair: Register16) {
-        let val = self.registers.get16(pair);
-        let res = val.overflowing_add(self.sp);
-        if (val & 0x0F00) + (self.sp & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set16(pair, res.0);
+    fn add_rr_sp(&mut self, cycle: u32, register: Register16) {
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        let rs = register.sub_registers();
+        if cycle == 4 {
+            let val = self.registers.get16(register);
+            let res = val.overflowing_add(self.sp);
+            if (val & 0x0F00) + (self.sp & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            self.registers.unset_flag(Flags::N);
+            *state.intermediate = res.0;
+            self.registers.set8(rs.1, (res.0 & 0xFF) as u8);
+        }  else if cycle == 8 {
+            self.registers.set8(rs.0, (*state.intermediate >> 8) as u8);
+            self.instr_state = None;
+        }
     }
 
-    fn add_sp_i8(&mut self, memory: &mut Memory) {
-        let i8 = self.fetch_u8_immdiate(memory) as i8 as i16 as u16;
-        let res = self.sp.overflowing_add(i8);
-        if (self.sp & 0x0F00) + (i8 & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+    fn add_sp_i8(&mut self, cycle: u32, memory: &mut Memory) {
+        let e8 = memory.read(self.pc + 1) as i8;
+        let val = e8.abs() as u8;
+        let res = if e8 >= 0 { self.sp.overflowing_add(val as u16) } else { self.sp.overflowing_sub(val as u16) };
+        if (self.sp & 0x0F00) + (e8 & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
         if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
         self.registers.unset_flag(Flags::N);
         self.registers.unset_flag(Flags::Z);
         self.sp = res.0;
     }
 
-    fn alu16_ld_spimm(&mut self, memory: &mut Memory, pair: Register16) {
-        let i8 = self.fetch_u8_immdiate(memory) as i8 as i16 as u16;
-        let res = self.sp.overflowing_add(i8);
-        if (self.sp & 0x0F00) + (i8 & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
-        if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::Z);
-        self.registers.set16(pair, res.0);
+    //LD HL,SP+i8
+    fn ld_rr_spi8(&mut self, cycle: u32, memory: &mut Memory, register: Register16) {
+        if cycle == 12 {
+            let e8 = memory.read(self.pc + 1) as i8;
+            let val = e8.abs() as u8;
+            let res = if e8 >= 0 { self.sp.overflowing_add(val as u16) } else { self.sp.overflowing_sub(val as u16) };
+            if (self.sp & 0x0F00) + (e8 & 0x0F00) > 0x0F00 { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
+            if res.1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::Z);
+            self.registers.set16(register, res.0);
+        }
     }
 
     /*
         CPU Control / Misc
     */
-    fn ret(&mut self, memory: &mut Memory) {
-        let mut pc = memory.read(self.sp + 1) as u16;
-        pc += (memory.read(self.sp + 2) as u16) << 8;
-        self.pc = pc;
-        self.sp += 2;
-    }
-
-    fn rst(&mut self, memory: &mut Memory, vec: u16) -> bool {
-        memory.write(self.sp, (self.pc >> 8) as u8);
-        memory.write(self.sp - 1, (self.pc & 0xFF) as u8);
-        self.sp -= 2;
-        update_pc = false;
-        self.pc = vec;
-        return false;
-    }
-
-    fn call(&mut self, memory: &mut Memory, addr: u16) -> bool {
-        memory.write(self.sp, (self.pc >> 8) as u8);
-        memory.write(self.sp - 1, (self.pc & 0xFF) as u8);
-        self.sp -= 2;
-        self.pc = addr;
-        return false;
-    }
-
-    fn jr_i8(&mut self, memory: &mut Memory, conditions: Vec<Flags>) -> u16 {
-        let mut jump = true;
-        let mut cycles = 0;
-        for condition in conditions {
-            if !self.registers.get_flag(condition) { jump = false }
+    fn ret(&mut self, cycle: u32, memory: &mut Memory, conditions: Vec<Flags>) {
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        if cycle == 8 {
+            let mut jump = true;
+            for condition in conditions {
+                if !self.registers.get_flag(condition) { jump = false }
+            }
+            if !jump { self.instr_state = None; }
+        } else if cycle == 12 {
+            *state.intermediate = memory.read(self.sp);
+            self.sp = self.sp + 1;
+        } else if cycle == 16 {
+            *state.intermediate = *state.intermediate + ((memory.read(self.sp) as u16) << 8);
+            self.sp = self.sp + 1;
+        } else if cycle == 20 {
+            self.pc = *state.intermediate;
+            self.instr_state = None;
         }
-        if jump {
-            cycles += 4;
+    }
+
+    fn rst(&mut self, cycle: u32, memory: &mut Memory, vec: u16) {
+        if cycle == 12 {
+            self.sp = self.sp - 1;
+            memory.write(self.sp, ((self.pc + 4) >> 8) as u8);
+        } else if cycle == 16 {
+            self.sp = self.sp - 1;
+            memory.write(self.sp - 1, ((self.pc + 3) & 0xFF) as u8);
+            self.pc = vec;
+            self.instr_state = None;
+        }
+    }
+
+    fn call(&mut self, cycle: u32, memory: &mut Memory, conditions: Vec<Flags>){
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        if cycle == 8 {
+            *state.intermediate = memory.read(self.pc + 1);
+        } else if cycle == 12 {
+            *state.intermediate  = *state.intermediate + ((memory.read(self.pc + 2) as u16) << 8);
+            self.pc = self.pc + 2;
+            let mut jump = true;
+            for condition in conditions {
+                if !self.registers.get_flag(condition) { jump = false }
+            }
+            if !jump { self.instr_state = None; }
+        } else if cycle == 16 {
+            self.sp = self.sp -1 ;
+            memory.write(self.sp, ((self.pc + 4) >> 8) as u8);
+        } else if cycle == 20 {
+            self.sp = self.sp - 1;
+            memory.write(self.sp - 1, ((self.pc + 3) & 0xFF) as u8);
+        } else if cycle == 24 {
+            self.instr_state = None;
+        }
+    }
+
+    fn jr_i8(&mut self, cycle: u32, memory: &mut Memory, conditions: Vec<Flags>) {
+        if cycle == 8 {
+            let mut jump = true;
+            for condition in conditions {
+                if !self.registers.get_flag(condition) { jump = false }
+            }
+            if !jump { self.instr_state = None; }
+        } else if cycle == 12 {
+            //let e8 = self.fetch_u8_immdiate(memory) as i8;
             let e8 = memory.read(self.pc + 1) as i8;
-            self.pc = ((self.pc as u32 as i32)  + (e8 as i32)) as u16;
+            let val = e8.abs() as u8;
+            let res = if e8 >= 0 { self.pc.overflowing_add(val as u16) } else { self.pc.overflowing_sub(val as u16) };
+            self.pc = res.0;
+            self.instr_state = None;
         }
-        return cycles;
+    }
+
+    fn jp_u16(&mut self, cycle: u32, memory: &mut Memory, conditions: Vec<Flags>) {
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        if cycle == 8 {
+            *state.intermediate = memory.read(self.pc + 1);
+        } else if cycle == 12 {
+            *state.intermediate  = *state.intermediate + ((memory.read(self.pc + 2) as u16) << 8);
+            let mut jump = true;
+            for condition in conditions {
+                if !self.registers.get_flag(condition) { jump = false }
+            }
+            if !jump { self.instr_state = None; }
+        } else if cycle == 16 {
+            self.pc = *state.intermediate;
+            self.instr_state = None;
+        }
+    }
+
+    fn jp_rr(&mut self, cycle: u32, register: Register16) {
+        if cycle == 4 {
+            let val = self.registers.get16(register);
+            self.pc = val;
+            self.instr_state = None;
+        }
+    }
+
+    fn di(&mut self, cycle: u32) {
+        if cycle == 4 {
+            self.interrupts.reset_ime();
+            self.instr_state = None;
+        }
+    }
+
+    fn ei(&mut self, cycle: u32) {
+        if cycle == 4 {
+            self.interrupts.ei();
+        }
+    }
+
+    fn reti(&mut self, cycle: u32, memory: &mut Memory) {
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        if cycle == 8 {
+            *state.intermediate = memory.read(self.sp);
+            self.sp = self.sp + 1;
+        } else if cycle == 12 {
+            *state.intermediate = *state.intermediate + ((memory.read(self.sp) as u16) << 8);
+            self.sp = self.sp + 1;
+        } else if cycle == 16 {
+            self.interrupts.set_ime();
+            self.pc = *state.intermediate;
+            self.instr_state = None;
+        }
+    }
+
+    fn prefix(&mut self, cycle: u32) {
+        let mut state = match &self.instr_state {
+            Some(x) => x,
+            None => panic!("Invalid state"),
+        };
+        *state.prefix = true;
     }
 }

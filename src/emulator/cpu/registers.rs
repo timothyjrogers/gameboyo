@@ -366,3 +366,14 @@ impl Registers {
         }
     }
 }
+
+impl Register16 {
+    pub fn sub_registers(&self) -> (Register8, Register8) {
+        match *self {
+            AF => (Register8::A, Register8::F),
+            BC => (Register8::B, Register8::C),
+            DE => (Register8::D, Register8::E),
+            HL => (Register8::H, Register8::L),
+        }
+    }
+}
