@@ -76,23 +76,23 @@ impl CPU {
     }
 
     pub fn tick(&mut self, memory: &mut Memory) {
-        //TODO check EI in interrupts
         //TODO check for requested interrupts
         match &self.state {
             CpuState::Ready => {
                 //let mut instr = memory.read(self.pc);             // fetch instruction at [PC]
                 let mut instr: u8 = 0;
-                let mut cycle: u32 = 0;
+                let mut cycle: u32 = 1;
+                let mut prefix = false;
                 match &mut self.instr_state {
                     Some(x) => {
-                        if 1 <= *x.cycle && *x.cycle < 4 || (4 <= *x.cycle && *x.cycle < 8 && *x.prefix) {
+                        if 1 <= *x.cycle && *x.cycle < 4 || (5 <= *x.cycle && *x.cycle < 8 && *x.prefix) {
                             *x.cycle = *x.cycle + 1;
                             return;
                         }
                         if *x.cycle == 8 && *x.prefix {
-                            self.pc = self.pc + 1;
                             *x.instruction = memory.read(self.pc);
                         }
+                        prefix = *x.prefix;
                         instr = *x.instruction;
                         *x.cycle = *x.cycle + 1;
                         cycle = *x.cycle;
@@ -100,260 +100,522 @@ impl CPU {
                     None => {
                         instr = memory.read(self.pc);
                         self.instr_state = Some(InstructionState::new(instr as u16));
-                        return;
+                        self.interrupts.check_ei();
                     }
                 }
-                match instr {
-                    0xCB  => self.state = CpuState::Wait(4),                                                                       //TODO PREFIX CB
-                    0x00 => self.nop(cycle),                                                                                        //NOP
-                    0x01 => self.ld_rr_u16(cycle, memory, Register8::B, Register8::C),                                   //LD BC,u16
-                    0x02 => self.sti_rr_r(cycle, memory, Register16::BC, Register8::A),                             //LD (BC),A
-                    0x03 => self.inc_rr(cycle, Register16::BC),                                                                 //INC BC
-                    0x04 => self.inc_r(cycle,Register8::B),                                                                 //INC B
-                    0x05 => self.dec_r(cycle,Register8::B),                                                                 //DEC B
-                    0x06 => self.ld_r_u8(cycle, memory, Register8::B),                                                      //LD B,u8
-                    0x07 => self.rlca(cycle),                                                                                      //RLCA
-                    0x08 => self.sti_u16_sp(cycle, memory),                                                                         //LD (u16),SP
-                    0x09 => self.add_rr_rr(cycle, Register16::HL, Register16::BC),                                       //ADD HL,BC
-                    0x0A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::BC),                              //LD A,(BC)
-                    0x0B => self.dec_rr(cycle, Register16::BC),                                                               //DEC BC
-                    0x0C => self.inc_r(cycle, Register8::C),                                                                  //INC C
-                    0x0D => self.dec_r(cycle, Register8::C),                                                                  //DEC C
-                    0x0E => self.ld_r_u8(cycle, memory, Register8::C),                                                        //LD C,u8
-                    0x0F => self.rrca(cycle),                                                                                    //RRCA
-                    0x10 => {                                                                                                    //TODO STOP
-                        self.state = CpuState::Wait(4);
-                    },
-                    0x11 => self.ld_rr_u16(cycle, memory, Register8::D, Register8::E),                                 //LD DE,u16
-                    0x12 => self.sti_rr_r(cycle, memory, Register16::DE, Register8::A),                            //LD (DE),A
-                    0x13 => self.inc_rr(cycle, Register16::DE),                                                                //INC DE
-                    0x14 => self.inc_r(cycle, Register8::D),                                                               //INC D
-                    0x15 => self.dec_r(cycle, Register8::D),                                                                //DEC D
-                    0x16 => self.ld_r_u8(cycle, memory, Register8::D),                                                       //LD D,u8
-                    0x17 => self.rla(cycle),                                                                                       //RLA
-                    0x18 => self.jr_i8(cycle, memory, vec![]),                                                            //JR i8
-                    0x19 => self.add_rr_rr(cycle, Register16::HL, Register16::DE), //ADD HL,DE
-                    0x1A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::DE),                               //LD A,(DE)
-                    0x1B => self.dec_rr(cycle, Register16::DE),                                                               //DEC DE
-                    0x1C => self.inc_r(cycle, Register8::E),                                                                  //INC E
-                    0x1D => self.dec_r(cycle, Register8::E),                                                                  //DEC E
-                    0x1E => self.ld_r_u8(cycle, memory, Register8::E),                                                           //LD E,u8
-                    0x1F => self.rra(cycle),                                                                                    //RRA
-                    0x20 => self.jr_i8(cycle, memory, vec![Flags::N, Flags::Z]),                                       //JR NZ,e8
-                    0x21 => self.ld_rr_u16(cycle, memory, Register8::H, Register8::L),                                //LD HL,u16
-                    0x22 => self.sti_rr_r_inc(cycle, memory, Register16::HL, Register8::A),                      //LD (HL+), A
-                    0x23 => self.inc_rr(cycle, Register16::HL),                                                               //INC HL
-                    0x24 => self.inc_r(cycle, Register8::H),                                                                  //INC H
-                    0x25 => self.dec_r(cycle, Register8::H),                                                                  //DEC H
-                    0x26 => self.ld_r_u8(cycle, memory, Register8::H),                                                           //LD H,u8
-                    0x27 => self.daa(cycle),                                                                                    //DAA
-                    0x28 => self.jr_i8(cycle, memory, vec![Flags::Z]),                                                 //JR Z,e8
-                    0x29 => self.add_rr_rr(cycle, Register16::HL, Register16::HL),                                  //ADD HL,HL
-                    0x2A => self.ldi_r_rr_inc(cycle, memory, Register8::A, Register16::HL),                      //LD A, (HL+)
-                    0x2B => self.dec_rr(cycle, Register16::HL),                                                         //DEC HL
-                    0x2C => self.inc_r(cycle, Register8::L),                                                            //INC L
-                    0x2D => self.dec_r(cycle, Targets::L),                                                              //DEC L
-                    0x2E => self.ld_r_u8(cycle, memory, Register8::L),                                                 //LD L,u8
-                    0x2F => self.cpl(cycle),                                                                                         //CPL
-                    0x30 => self.jr_i8(cycle, memory, vec![Flags::N, Flags::C]),                                       //JR NC,e8
-                    0x31 => self.ld_sp_u16(cycle, memory),                                                                      //LD SP,u16
-                    0x32 => self.sti_rr_r_dec(cycle, memory, Register16::HL, Register8::A),                      //LD (HL-), A
-                    0x33 => self.inc_sp(cycle),                                                                                 //INC SP
-                    0x34 => self.inci_rr(cycle, memory, Register16::HL),                                                         //INC (HL)
-                    0x35 => self.deci_rr(cycle, memory, Register16::HL),                                                         //DEC (HL)
-                    0x36 => self.sti_rr_u8(cycle, memory, Register16::HL),                                                    //LD (HL), u8
-                    0x37 => self.scf(cycle),                                                                                   //SCF
-                    0x38 => self.jr_i8(cycle, memory, vec![Flags::C]),                                                 //JR C,e8
-                    0x39 => self.add_rr_sp(cycle,Register16::HL),                                                                 //ADD HL,SP TODO
-                    0x3A => self.ldi_r_rr_dec(cycle, memory, Register8::A, Register16::HL),                      //LD A, (HL-)
-                    0x3B => self.dec_sp(cycle),                                                                                 //DEC SP
-                    0x3C => self.inc_r(cycle, Register8::A),                                                             //INC A
-                    0x3D => self.dec_r(cycle, Register8::A),                                                             //DEC A
-                    0x3E => self.ld_r_u8(cycle, memory, Register8::A),                                                   //LD A,u8
-                    0x3F => self.ccf(cycle),                                                                                    //CCF
-                    0x40 => self.ld_r_r(cycle, Register8::B, Register8::B),                                                     //LD B, B
-                    0x41 => self.ld_r_r(cycle, Register8::B, Register8::C),                                                     //LD B, C
-                    0x42 => self.ld_r_r(cycle, Register8::B, Register8::D),                                                     //LD B, D
-                    0x43 => self.ld_r_r(cycle, Register8::B, Register8::E),                                                     //LD B, E
-                    0x44 => self.ld_r_r(cycle, Register8::B, Register8::H),                                                     //LD B, H
-                    0x45 => self.ld_r_r(cycle, Register8::B, Register8::L),                                                     //LD B, L
-                    0x46 => self.ldi_r_rr(cycle, memory, Register8::B, Register16::HL),                          //LD B, (HL)
-                    0x47 => self.ld_r_r(cycle, Register8::B, Register8::A),                                                     //LD B, A
-                    0x48 => self.ld_r_r(cycle, Register8::C, Register8::B),                                                     //LD C, B
-                    0x49 => self.ld_r_r(cycle, Register8::C, Register8::C),                                                     //LD C, C
-                    0x4A => self.ld_r_r(cycle, Register8::C, Register8::D),                                                     //LD C, D
-                    0x4B => self.ld_r_r(cycle, Register8::C, Register8::E),                                                     //LD C, E
-                    0x4C => self.ld_r_r(cycle, Register8::C, Register8::H),                                                     //LD C, H
-                    0x4D => self.ld_r_r(cycle, Register8::C, Register8::L),                                                     //LD C, L
-                    0x4E => self.ldi_r_rr(cycle, memory, Register8::C, Register16::HL),                                   //LD C, (HL)
-                    0x4F => self.ld_r_r(cycle, Register8::C, Register8::A),                                                     //LD C, A
-                    0x50 => self.ld_r_r(cycle, Register8::D, Register8::B),                                                     //LD D, B
-                    0x51 => self.ld_r_r(cycle, Register8::D, Register8::C),                                                     //LD D, C
-                    0x52 => self.ld_r_r(cycle, Register8::D, Register8::D),                                                     //LD D, D
-                    0x53 => self.ld_r_r(cycle, Register8::D, Register8::E),                                                     //LD D, E
-                    0x54 => self.ld_r_r(cycle, Register8::D, Register8::H),                                                     //LD D, H
-                    0x55 => self.ld_r_r(cycle, Register8::D, Register8::L),                                                     //LD D, L
-                    0x56 => self.ldi_r_rr(cycle, memory, Register8::D, Register16::HL),                                   //LD D, (HL)
-                    0x57 => self.ld_r_r(cycle, Register8::D, Register8::A),                                                     //LD D, A
-                    0x58 => self.ld_r_r(cycle, Register8::E, Register8::B),                                                     //LD E, B
-                    0x59 => self.ld_r_r(cycle, Register8::E, Register8::C),                                                     //LD E, C
-                    0x5A => self.ld_r_r(cycle, Register8::E, Register8::D),                                                     //LD E, D
-                    0x5B => self.ld_r_r(cycle, Register8::E, Register8::E),                                                     //LD E, E
-                    0x5C => self.ld_r_r(cycle, Register8::E, Register8::H),                                                     //LD E, H
-                    0x5D => self.ld_r_r(cycle, Register8::E, Register8::L),                                                     //LD E, L
-                    0x5E => self.ldi_r_rr(cycle, memory, Register8::E, Register16::HL),                                   //LD E, (HL)
-                    0x5F => self.ld_r_r(cycle, Register8::E, Register8::A),                                                      //LD E, A
-                    0x60 => self.ld_r_r(cycle, Register8::H, Register8::B),                                                     //LD H, B
-                    0x61 => self.ld_r_r(cycle, Register8::H, Register8::C),                                                     //LD H, C
-                    0x62 => self.ld_r_r(cycle, Register8::H, Register8::D),                                                     //LD H, D
-                    0x63 => self.ld_r_r(cycle, Register8::H, Register8::E),                                                     //LD H, E
-                    0x64 => self.ld_r_r(cycle, Register8::H, Register8::H),                                                     //LD H, H
-                    0x65 => self.ld_r_r(cycle, Register8::H, Register8::L),                                                     //LD H, L
-                    0x66 => self.ldi_r_rr(cycle, memory, Register8::H, Register16::HL),                                  //LD H, (HL)
-                    0x67 => self.ld_r_r(cycle, Register8::H, Register8::A),                                                     //LD H, A
-                    0x68 => self.ld_r_r(cycle, Register8::L, Register8::B),                                                     //LD L, B
-                    0x69 => self.ld_r_r(cycle, Register8::L, Register8::C),                                                     //LD L, C
-                    0x6A => self.ld_r_r(cycle, Register8::L, Register8::D),                                                     //LD L, D
-                    0x6B => self.ld_r_r(cycle, Register8::L, Register8::E),                                                     //LD L, E
-                    0x6C => self.ld_r_r(cycle, Register8::L, Register8::H),                                                     //LD L, H
-                    0x6D => self.ld_r_r(cycle, Register8::L, Register8::L),                                                     //LD L, L
-                    0x6E => self.ldi_r_rr(cycle, memory, Register8::L, Register16::HL),                                   //LD L, (HL)
-                    0x6F=> self.ld_r_r(cycle, Register8::L, Register8::A),                                                      //LD L, A
-                    0x70 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::B),                                  //LD (HL), B
-                    0x71 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::C),                                  //LD (HL), C
-                    0x72 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::D),                                  //LD (HL), D
-                    0x73 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::E),                                  //LD (HL), E
-                    0x74 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::H),                                  //LD (HL), H
-                    0x75 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::L),                                  //LD (HL), L
-                    0x76 => {                                                                                                   //HALT TODO
-                        CpuState::Wait(4)
-                    },
-                    0x77 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::A),                                  //LD (HL), A
-                    0x78 => self.ld_r_r(cycle, Register8::A, Register8::B),                                                     //LD A, B
-                    0x79 => self.ld_r_r(cycle, Register8::A, Register8::C),                                                     //LD A, C
-                    0x7A => self.ld_r_r(cycle, Register8::A, Register8::D),                                                     //LD A, D
-                    0x7B => self.ld_r_r(cycle, Register8::A, Register8::E),                                                     //LD A, E
-                    0x7C => self.ld_r_r(cycle, Register8::A, Register8::H),                                                     //LD A, H
-                    0x7D => self.ld_r_r(cycle, Register8::A, Register8::L),                                                     //LD A, L
-                    0x7E => self.ldi_r_rr(cycle, memory, Register8::A, Register16::HL),                                  //LD A, (HL)
-                    0x7F=> self.ld_r_r(cycle, Register8::A, Register8::A),                                                      //LD A, A
-                    0x80 => self.add_r_r(cycle, Register8::A, Register8::B),                                            //ADD A, B
-                    0x81 => self.add_r_r(cycle, Register8::A, Register8::C),                                            //ADD A, C
-                    0x82 => self.add_r_r(cycle, Register8::A, Register8::D),                                            //ADD A, D
-                    0x83 => self.add_r_r(cycle, Register8::A, Register8::E),                                            //ADD A, E
-                    0x84 => self.add_r_r(cycle, Register8::A, Register8::H),                                            //ADD A, H
-                    0x85 => self.add_r_r(cycle, Register8::A, Register8::L),                                            //ADD A, L
-                    0x86 => self.addi_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //ADD A, (HL)
-                    0x87 => self.add_r_r(cycle, Register8::A, Register8::A),                                            //ADD A, A
-                    0x88 => self.adc_r_r(cycle, Register8::A, Register8::B),                                            //ADC A, B
-                    0x89 => self.adc_r_r(cycle, Register8::A, Register8::C),                                            //ADC A, C
-                    0x8A => self.adc_r_r(cycle, Register8::A, Register8::D),                                            //ADC A, D
-                    0x8B => self.adc_r_r(cycle, Register8::A, Register8::E),                                            //ADC A, E
-                    0x8C => self.adc_r_r(cycle, Register8::A, Register8::H),                                            //ADC A, H
-                    0x8D => self.adc_r_r(cycle, Register8::A, Register8::L),                                            //ADC A, L
-                    0x8E => self.adci_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //ADC A, (HL)
-                    0x8F => self.adc_r_r(cycle, Register8::A, Register8::A),                                            //ADC A, A
-                    0x90 => self.sub_r_r(cycle, Register8::A, Register8::B),                                            //SUB A, B
-                    0x91 => self.sub_r_r(cycle, Register8::A, Register8::C),                                            //SUB A, C
-                    0x92 => self.sub_r_r(cycle, Register8::A, Register8::D),                                            //SUB A, D
-                    0x93 => self.sub_r_r(cycle, Register8::A, Register8::E),                                            //SUB A, E
-                    0x94 => self.sub_r_r(cycle, Register8::A, Register8::H),                                            //SUB A, H
-                    0x95 => self.sub_r_r(cycle, Register8::A, Register8::L),                                            //SUB A, L
-                    0x96 => self.sub_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //SUB A, (HL)
-                    0x97 => self.sub_r_r(cycle, Register8::A, Register8::A),                                            //SUB A, A
-                    0x98 => self.sbc_r_r(cycle, Register8::A, Register8::B),                                                           //SBC A, B
-                    0x99 => self.sbc_r_r(cycle, Register8::A, Register8::C),                                                           //SBC A, C
-                    0x9A => self.sbc_r_r(cycle, Register8::A, Register8::D),                                                           //SBC A, D
-                    0x9B => self.sbc_r_r(cycle, Register8::A, Register8::E),                                                           //SBC A, E
-                    0x9C => self.sbc_r_r(cycle, Register8::A, Register8::H),                                                           //SBC A, H
-                    0x9D => self.sbc_r_r(cycle, Register8::A, Register8::L),                                                           //SBC A, L
-                    0x9E => self.sbci_r_rr(cycle, memory, Register8::A, Register16::HL),                                                //SBC A, (HL)
-                    0x9F => self.sbc_r_r(cycle, Register8::A, Register8::A),                                                           //SBC A, A
-                    0xA0 => self.and_r_r(cycle, Register8::A, Register8::B),                                            //AND A, B
-                    0xA1 => self.and_r_r(cycle, Register8::A, Register8::C),                                            //AND A, C
-                    0xA2 => self.and_r_r(cycle, Register8::A, Register8::D),                                            //AND A, D
-                    0xA3 => self.and_r_r(cycle, Register8::A, Register8::E),                                            //AND A, E
-                    0xA4 => self.and_r_r(cycle, Register8::A, Register8::H),                                            //AND A, H
-                    0xA5 => self.and_r_r(cycle, Register8::A, Register8::L),                                            //AND A, L
-                    0xA6 => self.andi_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //AND A, (HL)
-                    0xA7 => self.and_r_r(cycle, Register8::A, Register8::A),                                            //AND A, A
-                    0xA8 => self.xor_r_r(cycle, Register8::A, Register8::B),                                            //XOR A, B
-                    0xA9 => self.xor_r_r(cycle, Register8::A, Register8::C),                                            //XOR A, C
-                    0xAA => self.xor_r_r(cycle, Register8::A, Register8::D),                                            //XOR A, D
-                    0xAB => self.xor_r_r(cycle, Register8::A, Register8::E),                                            //XOR A, E
-                    0xAC => self.xor_r_r(cycle, Register8::A, Register8::H),                                            //XOR A, H
-                    0xAD => self.xor_r_r(cycle, Register8::A, Register8::L),                                            //XOR A, L
-                    0xAE => self.xori_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //XOR A, (HL)
-                    0xAF => self.xor_r_r(cycle, Register8::A, Register8::A),                                            //XOR A, A
-                    0xB0 => self.or_r_r(cycle, Register8::A, Register8::B),                                             //OR A, B
-                    0xB1 => self.or_r_r(cycle, Register8::A, Register8::C),                                             //OR A, C
-                    0xB2 => self.or_r_r(cycle, Register8::A, Register8::D),                                             //OR A, D
-                    0xB3 => self.or_r_r(cycle, Register8::A, Register8::E),                                             //OR A, E
-                    0xB4 => self.or_r_r(cycle, Register8::A, Register8::H),                                             //OR A, H
-                    0xB5 => self.or_r_r(cycle, Register8::A, Register8::L),                                             //OR A, L
-                    0xB6 => self.ori_r_rr(cycle, memory, Register8::A, Register16::HL),                                      //OR A, (HL)
-                    0xB7 => self.or_r_r(cycle, Register8::A, Register8::A),                                             //OR A, A
-                    0xB8 => self.cp_r_r(cycle, Register8::A, Register8::B),                                             //CP A, B
-                    0xB9 => self.cp_r_r(cycle, Register8::A, Register8::C),                                             //CP A, C
-                    0xBA => self.cp_r_r(cycle, Register8::A, Register8::D),                                             //CP A, D
-                    0xBB => self.cp_r_r(cycle, Register8::A, Register8::E),                                             //CP A, E
-                    0xBC => self.cp_r_r(cycle, Register8::A, Register8::H),                                             //CP A, H
-                    0xBD => self.cp_r_r(cycle, Register8::A, Register8::L),                                             //CP A, L
-                    0xBE => self.cpi_r_rr(cycle, memory, Register8::A, Register16::HL),                                      //CP A, (HL)
-                    0xBF => self.cp_r_r(cycle, Register8::A, Register8::A),                                             //CP A, A
-                    0xC0 => self.ret(cycle, memory, vec![Flags::N, Flags::Z]),                                         //RET NZ
-                    0xC1 => self.pop_rr(cycle, memory, Register16::BC),                                                  //POP BC
-                    0xC2 => self.jp_u16(cycle, memory, vec![Flags::N, Flags::Z]),                                       //JP NZ, u16
-                    0xC3 => self.jp_u16(cycle, memory, vec![]),                                                         //JP u16
-                    0xC4 => self.call(cycle, memory,vec![Flags::N, Flags::Z]),                                          //CALL NZ,u16
-                    0xC5 => self.push_rr(cycle, memory, Register16::BC),                                                    //PUSH BC
-                    0xC6 => self.add_r_u8(cycle, memory, Register8::A),                                                         //ADD A, u8
-                    0xC7 => self.rst(cycle, memory, 0x00),                                                                  //RST 00
-                    0xC8 => self.ret(cycle, memory, vec![Flags::Z]),                                                    //RET Z
-                    0xC9 => self.ret(cycle, memory, vec![]),                                                            //RET
-                    0xCA => self.jp_u16(cycle, memory, vec![Flags::Z]),                                                          //JP Z, u16
-                    0xCC => self.call(cycle, memory, vec![Flags::Z]),                                                   //CALL Z, u16
-                    0xCD => self.call(cycle, memory, vec![]),                                                             //CALL u16
-                    0xCE => self.adc_r_u8(cycle, memory, Targets::A),                                                           //ADC A, u8
-                    0xCF => self.rst(cycle, memory, 0x08),                                                                  //RST 08h
-                    0xD0 => self.ret(cycle, memory, vec![Flags::N, Flags::C])  ,                                        //RET NC
-                    0xD1 => self.pop_rr(cycle, memory, Register16::DE),                                                   //POP DE
-                    0xD2 => self.jp_u16(cycle, memory, vec![Flags::N, Flags::C]),                                      //JP NC, u16
-                    0xD4 => self.call(cycle, memory, vec![Flags::N, Flags::C]),                                        //CALL NC,u16
-                    0xD5 => self.push_rr(cycle, memory, Register16::DE),                                                 //PUSH DE
-                    0xD6 => self.sub_r_u8(cycle, memory, Targets::A),                                                           //SUB A, u8
-                    0xD7 => self.rst(cycle, memory, 0x10),                                                                  //RST 10h
-                    0xD8 => self.ret(cycle, memory, vec![Flags::C])                                                    //RET C
-                    0xD9 => self.reti(cycle, memory),                                                                          //RETI
-                    0xDA => self.jp_u16(cycle, memory, vec![Flags::C]),                                               //JP C, u16
-                    0xDC => self.call(cycle, memory, vec![Flags::C]),                                                //CALL C, u16
-                    0xDE => self.sbc_r_u8(cycle, memory, Register8::A),                                                      //SBC A, u8
-                    0xDF => self.rst(cycle, memory, 0x18),                                                             //RS 18h
-                    0xE0 => self.st_extended_u8(cycle, memory, Register8::A),                                   //LD (FF00+u8), A
-                    0xE1 => self.pop_rr(cycle, memory, Register16::HL),                                                       //POP HL
-                    0xE2 => self.st_extended_r(cycle, memory, Register8::A),                                  //LD (FF00+C), A
-                    0xE5 => self.push_rr(cycle, memory, Register16::HL),                                                      //PUSH HL
-                    0xE6 => self.and_r_u8(cycle, memory, Register8::A),                                                      //AND A, u8
-                    0xE7 => self.rst(cycle, memory, 0x20),                                                             //RST 20h
-                    0xE8 => self.add_sp_i8(cycle, memory),                                                                       //ADD SP, i8
-                    0xE9 => self.jp_rr(cycle, Register16::HL),                                                     //JP HL
-                    0xEA => self.sti_u16_r(cycle, memory, Register8::A),                                                           //LD (u16), A
-                    0xEE => self.xor_r_u8(cycle, memory, Register8::A),                                                      //XOR A, u8
-                    0xEF => self.rst(cycle, memory, 0x28),                                                             //RST 28h
-                    0xF0 => self.ld_extended_u8(cycle, memory, Register8::A),                                   //LD A, (FF00+u8)
-                    0xF1 => self.pop_rr(cycle, memory, Register16::AF),                                                       //POP AF
-                    0xF2 => self.ld_extended_r(cycle, memory, Register8::A),                                  //LD A, (FF00+C)
-                    0xF3 => self.di(cycle),                                                                         //DI (Disable interrupts)
-                    0xF5 => self.push_rr(cycle, memory, Register16::AF),                                                      //PUSH AF
-                    0xF6 => self.or_r_u8(cycle, memory, Register8::A),                                                       //OR A, u8
-                    0xF7 => self.rst(cycle, memory, 0x30),                                                             //RST 30h
-                    0xF8 => self.ld_rr_spi8(cycle, memory, Register16::HL),                                                    //LD HL, SP+i8
-                    0xF9 => self.ld_sp_rr(cycle, Register16::HL),                                                   //LD SP, HL
-                    0xFA => self.ldi_r_u16(cycle, memory, Register8::A),                                                       //LD A, (u16)
-                    0xFB => self.ei(cycle),                                                                           //EI (Enable interrupts)
-                    0xFE => self.cp_r_u8(cycle, memory, Register8::A),                                                       //CP A, u8
-                    0xFF => self.rst(cycle, memory, 0x38),                                                             //RST 38h
-                    _ => ()
+                if !prefix {
+                    match instr {
+                        0xCB => self.prefix(cycle),                                                                                     //PREFIX CB
+                        0x00 => self.nop(cycle),                                                                                        //NOP
+                        0x01 => self.ld_rr_u16(cycle, memory, Register8::B, Register8::C),                                   //LD BC,u16
+                        0x02 => self.sti_rr_r(cycle, memory, Register16::BC, Register8::A),                             //LD (BC),A
+                        0x03 => self.inc_rr(cycle, Register16::BC),                                                                 //INC BC
+                        0x04 => self.inc_r(cycle, Register8::B),                                                                 //INC B
+                        0x05 => self.dec_r(cycle, Register8::B),                                                                 //DEC B
+                        0x06 => self.ld_r_u8(cycle, memory, Register8::B),                                                      //LD B,u8
+                        0x07 => self.rlca(cycle),                                                                                      //RLCA
+                        0x08 => self.sti_u16_sp(cycle, memory),                                                                         //LD (u16),SP
+                        0x09 => self.add_rr_rr(cycle, Register16::HL, Register16::BC),                                       //ADD HL,BC
+                        0x0A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::BC),                              //LD A,(BC)
+                        0x0B => self.dec_rr(cycle, Register16::BC),                                                               //DEC BC
+                        0x0C => self.inc_r(cycle, Register8::C),                                                                  //INC C
+                        0x0D => self.dec_r(cycle, Register8::C),                                                                  //DEC C
+                        0x0E => self.ld_r_u8(cycle, memory, Register8::C),                                                        //LD C,u8
+                        0x0F => self.rrca(cycle),                                                                                    //RRCA
+                        0x10 => {                                                                                                    //TODO STOP
+                            self.state = CpuState::Wait(4);
+                        },
+                        0x11 => self.ld_rr_u16(cycle, memory, Register8::D, Register8::E),                                 //LD DE,u16
+                        0x12 => self.sti_rr_r(cycle, memory, Register16::DE, Register8::A),                            //LD (DE),A
+                        0x13 => self.inc_rr(cycle, Register16::DE),                                                                //INC DE
+                        0x14 => self.inc_r(cycle, Register8::D),                                                               //INC D
+                        0x15 => self.dec_r(cycle, Register8::D),                                                                //DEC D
+                        0x16 => self.ld_r_u8(cycle, memory, Register8::D),                                                       //LD D,u8
+                        0x17 => self.rla(cycle),                                                                                       //RLA
+                        0x18 => self.jr_i8(cycle, memory, vec![]),                                                            //JR i8
+                        0x19 => self.add_rr_rr(cycle, Register16::HL, Register16::DE), //ADD HL,DE
+                        0x1A => self.ldi_r_rr(cycle, memory, Register8::A, Register16::DE),                               //LD A,(DE)
+                        0x1B => self.dec_rr(cycle, Register16::DE),                                                               //DEC DE
+                        0x1C => self.inc_r(cycle, Register8::E),                                                                  //INC E
+                        0x1D => self.dec_r(cycle, Register8::E),                                                                  //DEC E
+                        0x1E => self.ld_r_u8(cycle, memory, Register8::E),                                                           //LD E,u8
+                        0x1F => self.rra(cycle),                                                                                    //RRA
+                        0x20 => self.jr_i8(cycle, memory, vec![Flags::N, Flags::Z]),                                       //JR NZ,e8
+                        0x21 => self.ld_rr_u16(cycle, memory, Register8::H, Register8::L),                                //LD HL,u16
+                        0x22 => self.sti_rr_r_inc(cycle, memory, Register16::HL, Register8::A),                      //LD (HL+), A
+                        0x23 => self.inc_rr(cycle, Register16::HL),                                                               //INC HL
+                        0x24 => self.inc_r(cycle, Register8::H),                                                                  //INC H
+                        0x25 => self.dec_r(cycle, Register8::H),                                                                  //DEC H
+                        0x26 => self.ld_r_u8(cycle, memory, Register8::H),                                                           //LD H,u8
+                        0x27 => self.daa(cycle),                                                                                    //DAA
+                        0x28 => self.jr_i8(cycle, memory, vec![Flags::Z]),                                                 //JR Z,e8
+                        0x29 => self.add_rr_rr(cycle, Register16::HL, Register16::HL),                                  //ADD HL,HL
+                        0x2A => self.ldi_r_rr_inc(cycle, memory, Register8::A, Register16::HL),                      //LD A, (HL+)
+                        0x2B => self.dec_rr(cycle, Register16::HL),                                                         //DEC HL
+                        0x2C => self.inc_r(cycle, Register8::L),                                                            //INC L
+                        0x2D => self.dec_r(cycle, Targets::L),                                                              //DEC L
+                        0x2E => self.ld_r_u8(cycle, memory, Register8::L),                                                 //LD L,u8
+                        0x2F => self.cpl(cycle),                                                                                         //CPL
+                        0x30 => self.jr_i8(cycle, memory, vec![Flags::N, Flags::C]),                                       //JR NC,e8
+                        0x31 => self.ld_sp_u16(cycle, memory),                                                                      //LD SP,u16
+                        0x32 => self.sti_rr_r_dec(cycle, memory, Register16::HL, Register8::A),                      //LD (HL-), A
+                        0x33 => self.inc_sp(cycle),                                                                                 //INC SP
+                        0x34 => self.inci_rr(cycle, memory, Register16::HL),                                                         //INC (HL)
+                        0x35 => self.deci_rr(cycle, memory, Register16::HL),                                                         //DEC (HL)
+                        0x36 => self.sti_rr_u8(cycle, memory, Register16::HL),                                                    //LD (HL), u8
+                        0x37 => self.scf(cycle),                                                                                   //SCF
+                        0x38 => self.jr_i8(cycle, memory, vec![Flags::C]),                                                 //JR C,e8
+                        0x39 => self.add_rr_sp(cycle, Register16::HL),                                                                 //ADD HL,SP TODO
+                        0x3A => self.ldi_r_rr_dec(cycle, memory, Register8::A, Register16::HL),                      //LD A, (HL-)
+                        0x3B => self.dec_sp(cycle),                                                                                 //DEC SP
+                        0x3C => self.inc_r(cycle, Register8::A),                                                             //INC A
+                        0x3D => self.dec_r(cycle, Register8::A),                                                             //DEC A
+                        0x3E => self.ld_r_u8(cycle, memory, Register8::A),                                                   //LD A,u8
+                        0x3F => self.ccf(cycle),                                                                                    //CCF
+                        0x40 => self.ld_r_r(cycle, Register8::B, Register8::B),                                                     //LD B, B
+                        0x41 => self.ld_r_r(cycle, Register8::B, Register8::C),                                                     //LD B, C
+                        0x42 => self.ld_r_r(cycle, Register8::B, Register8::D),                                                     //LD B, D
+                        0x43 => self.ld_r_r(cycle, Register8::B, Register8::E),                                                     //LD B, E
+                        0x44 => self.ld_r_r(cycle, Register8::B, Register8::H),                                                     //LD B, H
+                        0x45 => self.ld_r_r(cycle, Register8::B, Register8::L),                                                     //LD B, L
+                        0x46 => self.ldi_r_rr(cycle, memory, Register8::B, Register16::HL),                          //LD B, (HL)
+                        0x47 => self.ld_r_r(cycle, Register8::B, Register8::A),                                                     //LD B, A
+                        0x48 => self.ld_r_r(cycle, Register8::C, Register8::B),                                                     //LD C, B
+                        0x49 => self.ld_r_r(cycle, Register8::C, Register8::C),                                                     //LD C, C
+                        0x4A => self.ld_r_r(cycle, Register8::C, Register8::D),                                                     //LD C, D
+                        0x4B => self.ld_r_r(cycle, Register8::C, Register8::E),                                                     //LD C, E
+                        0x4C => self.ld_r_r(cycle, Register8::C, Register8::H),                                                     //LD C, H
+                        0x4D => self.ld_r_r(cycle, Register8::C, Register8::L),                                                     //LD C, L
+                        0x4E => self.ldi_r_rr(cycle, memory, Register8::C, Register16::HL),                                   //LD C, (HL)
+                        0x4F => self.ld_r_r(cycle, Register8::C, Register8::A),                                                     //LD C, A
+                        0x50 => self.ld_r_r(cycle, Register8::D, Register8::B),                                                     //LD D, B
+                        0x51 => self.ld_r_r(cycle, Register8::D, Register8::C),                                                     //LD D, C
+                        0x52 => self.ld_r_r(cycle, Register8::D, Register8::D),                                                     //LD D, D
+                        0x53 => self.ld_r_r(cycle, Register8::D, Register8::E),                                                     //LD D, E
+                        0x54 => self.ld_r_r(cycle, Register8::D, Register8::H),                                                     //LD D, H
+                        0x55 => self.ld_r_r(cycle, Register8::D, Register8::L),                                                     //LD D, L
+                        0x56 => self.ldi_r_rr(cycle, memory, Register8::D, Register16::HL),                                   //LD D, (HL)
+                        0x57 => self.ld_r_r(cycle, Register8::D, Register8::A),                                                     //LD D, A
+                        0x58 => self.ld_r_r(cycle, Register8::E, Register8::B),                                                     //LD E, B
+                        0x59 => self.ld_r_r(cycle, Register8::E, Register8::C),                                                     //LD E, C
+                        0x5A => self.ld_r_r(cycle, Register8::E, Register8::D),                                                     //LD E, D
+                        0x5B => self.ld_r_r(cycle, Register8::E, Register8::E),                                                     //LD E, E
+                        0x5C => self.ld_r_r(cycle, Register8::E, Register8::H),                                                     //LD E, H
+                        0x5D => self.ld_r_r(cycle, Register8::E, Register8::L),                                                     //LD E, L
+                        0x5E => self.ldi_r_rr(cycle, memory, Register8::E, Register16::HL),                                   //LD E, (HL)
+                        0x5F => self.ld_r_r(cycle, Register8::E, Register8::A),                                                      //LD E, A
+                        0x60 => self.ld_r_r(cycle, Register8::H, Register8::B),                                                     //LD H, B
+                        0x61 => self.ld_r_r(cycle, Register8::H, Register8::C),                                                     //LD H, C
+                        0x62 => self.ld_r_r(cycle, Register8::H, Register8::D),                                                     //LD H, D
+                        0x63 => self.ld_r_r(cycle, Register8::H, Register8::E),                                                     //LD H, E
+                        0x64 => self.ld_r_r(cycle, Register8::H, Register8::H),                                                     //LD H, H
+                        0x65 => self.ld_r_r(cycle, Register8::H, Register8::L),                                                     //LD H, L
+                        0x66 => self.ldi_r_rr(cycle, memory, Register8::H, Register16::HL),                                  //LD H, (HL)
+                        0x67 => self.ld_r_r(cycle, Register8::H, Register8::A),                                                     //LD H, A
+                        0x68 => self.ld_r_r(cycle, Register8::L, Register8::B),                                                     //LD L, B
+                        0x69 => self.ld_r_r(cycle, Register8::L, Register8::C),                                                     //LD L, C
+                        0x6A => self.ld_r_r(cycle, Register8::L, Register8::D),                                                     //LD L, D
+                        0x6B => self.ld_r_r(cycle, Register8::L, Register8::E),                                                     //LD L, E
+                        0x6C => self.ld_r_r(cycle, Register8::L, Register8::H),                                                     //LD L, H
+                        0x6D => self.ld_r_r(cycle, Register8::L, Register8::L),                                                     //LD L, L
+                        0x6E => self.ldi_r_rr(cycle, memory, Register8::L, Register16::HL),                                   //LD L, (HL)
+                        0x6F => self.ld_r_r(cycle, Register8::L, Register8::A),                                                      //LD L, A
+                        0x70 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::B),                                  //LD (HL), B
+                        0x71 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::C),                                  //LD (HL), C
+                        0x72 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::D),                                  //LD (HL), D
+                        0x73 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::E),                                  //LD (HL), E
+                        0x74 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::H),                                  //LD (HL), H
+                        0x75 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::L),                                  //LD (HL), L
+                        0x76 => {                                                                                                   //HALT TODO
+                            CpuState::Wait(4)
+                        },
+                        0x77 => self.sti_rr_r(cycle, memory, Register16::HL, Register8::A),                                  //LD (HL), A
+                        0x78 => self.ld_r_r(cycle, Register8::A, Register8::B),                                                     //LD A, B
+                        0x79 => self.ld_r_r(cycle, Register8::A, Register8::C),                                                     //LD A, C
+                        0x7A => self.ld_r_r(cycle, Register8::A, Register8::D),                                                     //LD A, D
+                        0x7B => self.ld_r_r(cycle, Register8::A, Register8::E),                                                     //LD A, E
+                        0x7C => self.ld_r_r(cycle, Register8::A, Register8::H),                                                     //LD A, H
+                        0x7D => self.ld_r_r(cycle, Register8::A, Register8::L),                                                     //LD A, L
+                        0x7E => self.ldi_r_rr(cycle, memory, Register8::A, Register16::HL),                                  //LD A, (HL)
+                        0x7F => self.ld_r_r(cycle, Register8::A, Register8::A),                                                      //LD A, A
+                        0x80 => self.add_r_r(cycle, Register8::A, Register8::B),                                            //ADD A, B
+                        0x81 => self.add_r_r(cycle, Register8::A, Register8::C),                                            //ADD A, C
+                        0x82 => self.add_r_r(cycle, Register8::A, Register8::D),                                            //ADD A, D
+                        0x83 => self.add_r_r(cycle, Register8::A, Register8::E),                                            //ADD A, E
+                        0x84 => self.add_r_r(cycle, Register8::A, Register8::H),                                            //ADD A, H
+                        0x85 => self.add_r_r(cycle, Register8::A, Register8::L),                                            //ADD A, L
+                        0x86 => self.addi_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //ADD A, (HL)
+                        0x87 => self.add_r_r(cycle, Register8::A, Register8::A),                                            //ADD A, A
+                        0x88 => self.adc_r_r(cycle, Register8::A, Register8::B),                                            //ADC A, B
+                        0x89 => self.adc_r_r(cycle, Register8::A, Register8::C),                                            //ADC A, C
+                        0x8A => self.adc_r_r(cycle, Register8::A, Register8::D),                                            //ADC A, D
+                        0x8B => self.adc_r_r(cycle, Register8::A, Register8::E),                                            //ADC A, E
+                        0x8C => self.adc_r_r(cycle, Register8::A, Register8::H),                                            //ADC A, H
+                        0x8D => self.adc_r_r(cycle, Register8::A, Register8::L),                                            //ADC A, L
+                        0x8E => self.adci_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //ADC A, (HL)
+                        0x8F => self.adc_r_r(cycle, Register8::A, Register8::A),                                            //ADC A, A
+                        0x90 => self.sub_r_r(cycle, Register8::A, Register8::B),                                            //SUB A, B
+                        0x91 => self.sub_r_r(cycle, Register8::A, Register8::C),                                            //SUB A, C
+                        0x92 => self.sub_r_r(cycle, Register8::A, Register8::D),                                            //SUB A, D
+                        0x93 => self.sub_r_r(cycle, Register8::A, Register8::E),                                            //SUB A, E
+                        0x94 => self.sub_r_r(cycle, Register8::A, Register8::H),                                            //SUB A, H
+                        0x95 => self.sub_r_r(cycle, Register8::A, Register8::L),                                            //SUB A, L
+                        0x96 => self.sub_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //SUB A, (HL)
+                        0x97 => self.sub_r_r(cycle, Register8::A, Register8::A),                                            //SUB A, A
+                        0x98 => self.sbc_r_r(cycle, Register8::A, Register8::B),                                                           //SBC A, B
+                        0x99 => self.sbc_r_r(cycle, Register8::A, Register8::C),                                                           //SBC A, C
+                        0x9A => self.sbc_r_r(cycle, Register8::A, Register8::D),                                                           //SBC A, D
+                        0x9B => self.sbc_r_r(cycle, Register8::A, Register8::E),                                                           //SBC A, E
+                        0x9C => self.sbc_r_r(cycle, Register8::A, Register8::H),                                                           //SBC A, H
+                        0x9D => self.sbc_r_r(cycle, Register8::A, Register8::L),                                                           //SBC A, L
+                        0x9E => self.sbci_r_rr(cycle, memory, Register8::A, Register16::HL),                                                //SBC A, (HL)
+                        0x9F => self.sbc_r_r(cycle, Register8::A, Register8::A),                                                           //SBC A, A
+                        0xA0 => self.and_r_r(cycle, Register8::A, Register8::B),                                            //AND A, B
+                        0xA1 => self.and_r_r(cycle, Register8::A, Register8::C),                                            //AND A, C
+                        0xA2 => self.and_r_r(cycle, Register8::A, Register8::D),                                            //AND A, D
+                        0xA3 => self.and_r_r(cycle, Register8::A, Register8::E),                                            //AND A, E
+                        0xA4 => self.and_r_r(cycle, Register8::A, Register8::H),                                            //AND A, H
+                        0xA5 => self.and_r_r(cycle, Register8::A, Register8::L),                                            //AND A, L
+                        0xA6 => self.andi_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //AND A, (HL)
+                        0xA7 => self.and_r_r(cycle, Register8::A, Register8::A),                                            //AND A, A
+                        0xA8 => self.xor_r_r(cycle, Register8::A, Register8::B),                                            //XOR A, B
+                        0xA9 => self.xor_r_r(cycle, Register8::A, Register8::C),                                            //XOR A, C
+                        0xAA => self.xor_r_r(cycle, Register8::A, Register8::D),                                            //XOR A, D
+                        0xAB => self.xor_r_r(cycle, Register8::A, Register8::E),                                            //XOR A, E
+                        0xAC => self.xor_r_r(cycle, Register8::A, Register8::H),                                            //XOR A, H
+                        0xAD => self.xor_r_r(cycle, Register8::A, Register8::L),                                            //XOR A, L
+                        0xAE => self.xori_r_rr(cycle, memory, Register8::A, Register16::HL),                                     //XOR A, (HL)
+                        0xAF => self.xor_r_r(cycle, Register8::A, Register8::A),                                            //XOR A, A
+                        0xB0 => self.or_r_r(cycle, Register8::A, Register8::B),                                             //OR A, B
+                        0xB1 => self.or_r_r(cycle, Register8::A, Register8::C),                                             //OR A, C
+                        0xB2 => self.or_r_r(cycle, Register8::A, Register8::D),                                             //OR A, D
+                        0xB3 => self.or_r_r(cycle, Register8::A, Register8::E),                                             //OR A, E
+                        0xB4 => self.or_r_r(cycle, Register8::A, Register8::H),                                             //OR A, H
+                        0xB5 => self.or_r_r(cycle, Register8::A, Register8::L),                                             //OR A, L
+                        0xB6 => self.ori_r_rr(cycle, memory, Register8::A, Register16::HL),                                      //OR A, (HL)
+                        0xB7 => self.or_r_r(cycle, Register8::A, Register8::A),                                             //OR A, A
+                        0xB8 => self.cp_r_r(cycle, Register8::A, Register8::B),                                             //CP A, B
+                        0xB9 => self.cp_r_r(cycle, Register8::A, Register8::C),                                             //CP A, C
+                        0xBA => self.cp_r_r(cycle, Register8::A, Register8::D),                                             //CP A, D
+                        0xBB => self.cp_r_r(cycle, Register8::A, Register8::E),                                             //CP A, E
+                        0xBC => self.cp_r_r(cycle, Register8::A, Register8::H),                                             //CP A, H
+                        0xBD => self.cp_r_r(cycle, Register8::A, Register8::L),                                             //CP A, L
+                        0xBE => self.cpi_r_rr(cycle, memory, Register8::A, Register16::HL),                                      //CP A, (HL)
+                        0xBF => self.cp_r_r(cycle, Register8::A, Register8::A),                                             //CP A, A
+                        0xC0 => self.ret(cycle, memory, vec![Flags::N, Flags::Z]),                                         //RET NZ
+                        0xC1 => self.pop_rr(cycle, memory, Register16::BC),                                                  //POP BC
+                        0xC2 => self.jp_u16(cycle, memory, vec![Flags::N, Flags::Z]),                                       //JP NZ, u16
+                        0xC3 => self.jp_u16(cycle, memory, vec![]),                                                         //JP u16
+                        0xC4 => self.call(cycle, memory, vec![Flags::N, Flags::Z]),                                          //CALL NZ,u16
+                        0xC5 => self.push_rr(cycle, memory, Register16::BC),                                                    //PUSH BC
+                        0xC6 => self.add_r_u8(cycle, memory, Register8::A),                                                         //ADD A, u8
+                        0xC7 => self.rst(cycle, memory, 0x00),                                                                  //RST 00
+                        0xC8 => self.ret(cycle, memory, vec![Flags::Z]),                                                    //RET Z
+                        0xC9 => self.ret(cycle, memory, vec![]),                                                            //RET
+                        0xCA => self.jp_u16(cycle, memory, vec![Flags::Z]),                                                          //JP Z, u16
+                        0xCC => self.call(cycle, memory, vec![Flags::Z]),                                                   //CALL Z, u16
+                        0xCD => self.call(cycle, memory, vec![]),                                                             //CALL u16
+                        0xCE => self.adc_r_u8(cycle, memory, Targets::A),                                                           //ADC A, u8
+                        0xCF => self.rst(cycle, memory, 0x08),                                                                  //RST 08h
+                        0xD0 => self.ret(cycle, memory, vec![Flags::N, Flags::C]),                                        //RET NC
+                        0xD1 => self.pop_rr(cycle, memory, Register16::DE),                                                   //POP DE
+                        0xD2 => self.jp_u16(cycle, memory, vec![Flags::N, Flags::C]),                                      //JP NC, u16
+                        0xD4 => self.call(cycle, memory, vec![Flags::N, Flags::C]),                                        //CALL NC,u16
+                        0xD5 => self.push_rr(cycle, memory, Register16::DE),                                                 //PUSH DE
+                        0xD6 => self.sub_r_u8(cycle, memory, Targets::A),                                                           //SUB A, u8
+                        0xD7 => self.rst(cycle, memory, 0x10),                                                                  //RST 10h
+                        0xD8 => self.ret(cycle, memory, vec![Flags::C])                                                    //RET C
+                        0xD9 => self.reti(cycle, memory),                                                                          //RETI
+                        0xDA => self.jp_u16(cycle, memory, vec![Flags::C]),                                               //JP C, u16
+                        0xDC => self.call(cycle, memory, vec![Flags::C]),                                                //CALL C, u16
+                        0xDE => self.sbc_r_u8(cycle, memory, Register8::A),                                                      //SBC A, u8
+                        0xDF => self.rst(cycle, memory, 0x18),                                                             //RS 18h
+                        0xE0 => self.st_extended_u8(cycle, memory, Register8::A),                                   //LD (FF00+u8), A
+                        0xE1 => self.pop_rr(cycle, memory, Register16::HL),                                                       //POP HL
+                        0xE2 => self.st_extended_r(cycle, memory, Register8::A),                                  //LD (FF00+C), A
+                        0xE5 => self.push_rr(cycle, memory, Register16::HL),                                                      //PUSH HL
+                        0xE6 => self.and_r_u8(cycle, memory, Register8::A),                                                      //AND A, u8
+                        0xE7 => self.rst(cycle, memory, 0x20),                                                             //RST 20h
+                        0xE8 => self.add_sp_i8(cycle, memory),                                                                       //ADD SP, i8
+                        0xE9 => self.jp_rr(cycle, Register16::HL),                                                     //JP HL
+                        0xEA => self.sti_u16_r(cycle, memory, Register8::A),                                                           //LD (u16), A
+                        0xEE => self.xor_r_u8(cycle, memory, Register8::A),                                                      //XOR A, u8
+                        0xEF => self.rst(cycle, memory, 0x28),                                                             //RST 28h
+                        0xF0 => self.ld_extended_u8(cycle, memory, Register8::A),                                   //LD A, (FF00+u8)
+                        0xF1 => self.pop_rr(cycle, memory, Register16::AF),                                                       //POP AF
+                        0xF2 => self.ld_extended_r(cycle, memory, Register8::A),                                  //LD A, (FF00+C)
+                        0xF3 => self.di(cycle),                                                                         //DI (Disable interrupts)
+                        0xF5 => self.push_rr(cycle, memory, Register16::AF),                                                      //PUSH AF
+                        0xF6 => self.or_r_u8(cycle, memory, Register8::A),                                                       //OR A, u8
+                        0xF7 => self.rst(cycle, memory, 0x30),                                                             //RST 30h
+                        0xF8 => self.ld_rr_spi8(cycle, memory, Register16::HL),                                                    //LD HL, SP+i8
+                        0xF9 => self.ld_sp_rr(cycle, Register16::HL),                                                   //LD SP, HL
+                        0xFA => self.ldi_r_u16(cycle, memory, Register8::A),                                                       //LD A, (u16)
+                        0xFB => self.ei(cycle),                                                                           //EI (Enable interrupts)
+                        0xFE => self.cp_r_u8(cycle, memory, Register8::A),                                                       //CP A, u8
+                        0xFF => self.rst(cycle, memory, 0x38),                                                             //RST 38h
+                        _ => panic!("Code reached unreachable state")
+                    }
+                } else {
+                    match instr {
+                        0x00 => self.rlc_r(cycle, Register8::B),
+                        0x01 => self.rlc_r(cycle, Register8::C),
+                        0x02 => self.rlc_r(cycle, Register8::D),
+                        0x03 => self.rlc_r(cycle, Register8::E),
+                        0x04 => self.rlc_r(cycle, Register8::H),
+                        0x05 => self.rlc_r(cycle, Register8::L),
+                        0x06 => self.rlci_rr(cycle, Register16::HL),
+                        0x07 => self.rlc_r(cycle, Register8::A),
+                        0x08 => self.rrc_r(cycle, Register8::B),
+                        0x09 => self.rrc_r(cycle, Register8::C),
+                        0x0A => self.rrc_r(cycle, Register8::D),
+                        0x0B => self.rrc_r(cycle, Register8::E),
+                        0x0C => self.rrc_r(cycle, Register8::H),
+                        0x0D => self.rrc_r(cycle, Register8::L),
+                        0x0E => self.rrci_rr(cycle, Register16::HL),
+                        0x0F => self.rrc_r(cycle, Register8::A),
+                        0x10 => self.rl_r(cycle, Register8::B),
+                        0x11 => self.rl_r(cycle, Register8::C),
+                        0x12 => self.rl_r(cycle, Register8::D),
+                        0x13 => self.rl_r(cycle, Register8::E),
+                        0x14 => self.rl_r(cycle, Register8::H),
+                        0x15 => self.rl_r(cycle, Register8::L),
+                        0x16 => self.rli_rr(cycle, Register16::HL),
+                        0x17 => self.rl_r(cycle, Register8::A),
+                        0x18 => self.rr_r(cycle, Register8::B),
+                        0x19 => self.rr_r(cycle, Register8::C),
+                        0x1A => self.rr_r(cycle, Register8::D),
+                        0x1B => self.rr_r(cycle, Register8::E),
+                        0x1C => self.rr_r(cycle, Register8::H),
+                        0x1D => self.rr_r(cycle, Register8::L),
+                        0x1E => self.rri_rr(cycle, Register16::HL),
+                        0x1F => self.rr_r(cycle, Register8::A),
+                        0x20 => self.sla_r(cycle, Register8::B),
+                        0x21 => self.sla_r(cycle, Register8::C),
+                        0x22 => self.sla_r(cycle, Register8::D),
+                        0x23 => self.sla_r(cycle, Register8::E),
+                        0x24 => self.sla_r(cycle, Register8::H),
+                        0x25 => self.sla_r(cycle, Register8::L),
+                        0x26 => self.slai_rr(cycle, memory, Register16::HL),
+                        0x27 => self.sla_r(cycle, Register8::A),
+                        0x28 => self.sra_r(cycle, Register8::B),
+                        0x29 => self.sra_r(cycle, Register8::C),
+                        0x2A => self.sra_r(cycle, Register8::D),
+                        0x2B => self.sra_r(cycle, Register8::E),
+                        0x2C => self.sra_r(cycle, Register8::H),
+                        0x2D => self.sra_r(cycle, Register8::L),
+                        0x2E => self.srai_rr(cycle, memory, Register16::HL),
+                        0x2F => self.sra_r(cycle, Register8::A),
+                        0x30 => self.swap_r(cycle, Register8::B),
+                        0x31 => self.swap_r(cycle, Register8::C),
+                        0x32 => self.swap_r(cycle, Register8::D),
+                        0x33 => self.swap_r(cycle, Register8::E),
+                        0x34 => self.swap_r(cycle, Register8::H),
+                        0x35 => self.swap_r(cycle, Register8::L),
+                        0x36 => self.swapi_rr(cycle, memory, Register16::HL),
+                        0x37 => self.swap_r(cycle, Register8::A),
+                        0x38 => self.srl_r(cycle, Register8::B),
+                        0x39 => self.srl_r(cycle, Register8::C),
+                        0x3A => self.srl_r(cycle, Register8::D),
+                        0x3B => self.srl_r(cycle, Register8::E),
+                        0x3C => self.srl_r(cycle, Register8::H),
+                        0x3D => self.srl_r(cycle, Register8::L),
+                        0x3E => self.srli_rr(cycle, memory, Register16::HL),
+                        0x3F => self.srl_r(cycle, Register8::A),
+                        0x40 => self.bit_r(cycle, 0, Register8::B),
+                        0x41 => self.bit_r(cycle, 0, Register8::C),
+                        0x42 => self.bit_r(cycle, 0, Register8::D),
+                        0x43 => self.bit_r(cycle, 0, Register8::E),
+                        0x44 => self.bit_r(cycle, 0, Register8::H),
+                        0x45 => self.bit_r(cycle, 0, Register8::L),
+                        0x46 => self.biti_rr(cycle, memory, 0,  Register16::HL),
+                        0x47 => self.bit_r(cycle, 0, Register8::A),
+                        0x48 => self.bit_r(cycle, 1, Register8::B),
+                        0x49 => self.bit_r(cycle, 1, Register8::C),
+                        0x4A => self.bit_r(cycle, 1, Register8::D),
+                        0x4B => self.bit_r(cycle, 1, Register8::E),
+                        0x4C => self.bit_r(cycle, 1, Register8::H),
+                        0x4D => self.bit_r(cycle, 1, Register8::L),
+                        0x4E => self.biti_rr(cycle, memory, 1,  Register16::HL),
+                        0x4F => self.bit_r(cycle, 1, Register8::A),
+                        0x50 => self.bit_r(cycle, 2, Register8::B),
+                        0x51 => self.bit_r(cycle, 2, Register8::C),
+                        0x52 => self.bit_r(cycle, 2, Register8::D),
+                        0x53 => self.bit_r(cycle, 2, Register8::E),
+                        0x54 => self.bit_r(cycle, 2, Register8::H),
+                        0x55 => self.bit_r(cycle, 2, Register8::L),
+                        0x56 => self.biti_rr(cycle, memory, 2,  Register16::HL),
+                        0x57 => self.bit_r(cycle, 2, Register8::A),
+                        0x58 => self.bit_r(cycle, 3, Register8::B),
+                        0x59 => self.bit_r(cycle, 3, Register8::C),
+                        0x5A => self.bit_r(cycle, 3, Register8::D),
+                        0x5B => self.bit_r(cycle, 3, Register8::E),
+                        0x5C => self.bit_r(cycle, 3, Register8::H),
+                        0x5D => self.bit_r(cycle, 3, Register8::L),
+                        0x5E => self.biti_rr(cycle, memory, 3,  Register16::HL),
+                        0x5F => self.bit_r(cycle, 3, Register8::A),
+                        0x60 => self.bit_r(cycle, 4, Register8::B),
+                        0x61 => self.bit_r(cycle, 4, Register8::C),
+                        0x62 => self.bit_r(cycle, 4, Register8::D),
+                        0x63 => self.bit_r(cycle, 4, Register8::E),
+                        0x64 => self.bit_r(cycle, 4, Register8::H),
+                        0x65 => self.bit_r(cycle, 4, Register8::L),
+                        0x66 => self.biti_rr(cycle, memory, 4,  Register16::HL),
+                        0x67 => self.bit_r(cycle, 4, Register8::A),
+                        0x68 => self.bit_r(cycle, 5, Register8::B),
+                        0x69 => self.bit_r(cycle, 5, Register8::C),
+                        0x6A => self.bit_r(cycle, 5, Register8::D),
+                        0x6B => self.bit_r(cycle, 5, Register8::E),
+                        0x6C => self.bit_r(cycle, 5, Register8::H),
+                        0x6D => self.bit_r(cycle, 5, Register8::L),
+                        0x6E => self.biti_rr(cycle, memory, 5,  Register16::HL),
+                        0x6F => self.bit_r(cycle, 5, Register8::A),
+                        0x70 => self.bit_r(cycle, 6, Register8::B),
+                        0x71 => self.bit_r(cycle, 6, Register8::C),
+                        0x72 => self.bit_r(cycle, 6, Register8::D),
+                        0x73 => self.bit_r(cycle, 6, Register8::E),
+                        0x74 => self.bit_r(cycle, 6, Register8::H),
+                        0x75 => self.bit_r(cycle, 6, Register8::L),
+                        0x76 => self.biti_rr(cycle, memory, 6,  Register16::HL),
+                        0x77 => self.bit_r(cycle, 6, Register8::A),
+                        0x78 => self.bit_r(cycle, 7, Register8::B),
+                        0x79 => self.bit_r(cycle, 7, Register8::C),
+                        0x7A => self.bit_r(cycle, 7, Register8::D),
+                        0x7B => self.bit_r(cycle, 7, Register8::E),
+                        0x7C => self.bit_r(cycle, 7, Register8::H),
+                        0x7D => self.bit_r(cycle, 7, Register8::L),
+                        0x7E => self.biti_rr(cycle, memory, 7,  Register16::HL),
+                        0x7F => self.bit_r(cycle, 7, Register8::A),
+                        0x80 => self.res_r(cycle, 0, Register8::B),
+                        0x81 => self.res_r(cycle, 0, Register8::C),
+                        0x82 => self.res_r(cycle, 0, Register8::D),
+                        0x83 => self.res_r(cycle, 0, Register8::E),
+                        0x84 => self.res_r(cycle, 0, Register8::H),
+                        0x85 => self.res_r(cycle, 0, Register8::L),
+                        0x86 => self.resi_rr(cycle, memory, 0,  Register16::HL),
+                        0x87 => self.res_r(cycle, 0, Register8::A),
+                        0x88 => self.res_r(cycle, 1, Register8::B),
+                        0x89 => self.res_r(cycle, 1, Register8::C),
+                        0x8A => self.res_r(cycle, 1, Register8::D),
+                        0x8B => self.res_r(cycle, 1, Register8::E),
+                        0x8C => self.res_r(cycle, 1, Register8::H),
+                        0x8D => self.res_r(cycle, 1, Register8::L),
+                        0x8E => self.resi_rr(cycle, memory, 1,  Register16::HL),
+                        0x8F => self.res_r(cycle, 1, Register8::A),
+                        0x90 => self.res_r(cycle, 2, Register8::B),
+                        0x91 => self.res_r(cycle, 2, Register8::C),
+                        0x92 => self.res_r(cycle, 2, Register8::D),
+                        0x93 => self.res_r(cycle, 2, Register8::E),
+                        0x94 => self.res_r(cycle, 2, Register8::H),
+                        0x95 => self.res_r(cycle, 2, Register8::L),
+                        0x96 => self.resi_rr(cycle, memory, 2,  Register16::HL),
+                        0x97 => self.res_r(cycle, 2, Register8::A),
+                        0x98 => self.res_r(cycle, 3, Register8::B),
+                        0x99 => self.res_r(cycle, 3, Register8::C),
+                        0x9A => self.res_r(cycle, 3, Register8::D),
+                        0x9B => self.res_r(cycle, 3, Register8::E),
+                        0x9C => self.res_r(cycle, 3, Register8::H),
+                        0x9D => self.res_r(cycle, 3, Register8::L),
+                        0x9E => self.resi_rr(cycle, memory, 3,  Register16::HL),
+                        0x9F => self.res_r(cycle, 3, Register8::A),
+                        0xA0 => self.res_r(cycle, 4, Register8::B),
+                        0xA1 => self.res_r(cycle, 4, Register8::C),
+                        0xA2 => self.res_r(cycle, 4, Register8::D),
+                        0xA3 => self.res_r(cycle, 4, Register8::E),
+                        0xA4 => self.res_r(cycle, 4, Register8::H),
+                        0xA5 => self.res_r(cycle, 4, Register8::L),
+                        0xA6 => self.resi_rr(cycle, memory, 4,  Register16::HL),
+                        0xA7 => self.res_r(cycle, 4, Register8::A),
+                        0xA8 => self.res_r(cycle, 5, Register8::B),
+                        0xA9 => self.res_r(cycle, 5, Register8::C),
+                        0xAA => self.res_r(cycle, 5, Register8::D),
+                        0xAB => self.res_r(cycle, 5, Register8::E),
+                        0xAC => self.res_r(cycle, 5, Register8::H),
+                        0xAD => self.res_r(cycle, 5, Register8::L),
+                        0xAE => self.resi_rr(cycle, memory, 5,  Register16::HL),
+                        0xAF => self.res_r(cycle, 5, Register8::A),
+                        0xB0 => self.res_r(cycle, 6, Register8::B),
+                        0xB1 => self.res_r(cycle, 6, Register8::C),
+                        0xB2 => self.res_r(cycle, 6, Register8::D),
+                        0xB3 => self.res_r(cycle, 6, Register8::E),
+                        0xB4 => self.res_r(cycle, 6, Register8::H),
+                        0xB5 => self.res_r(cycle, 6, Register8::L),
+                        0xB6 => self.resi_rr(cycle, memory, 6,  Register16::HL),
+                        0xB7 => self.res_r(cycle, 6, Register8::A),
+                        0xB8 => self.res_r(cycle, 7, Register8::B),
+                        0xB9 => self.res_r(cycle, 7, Register8::C),
+                        0xBA => self.res_r(cycle, 7, Register8::D),
+                        0xBB => self.res_r(cycle, 7, Register8::E),
+                        0xBC => self.res_r(cycle, 7, Register8::H),
+                        0xBD => self.res_r(cycle, 7, Register8::L),
+                        0xBE => self.resi_rr(cycle, memory, 7,  Register16::HL),
+                        0xBF => self.res_r(cycle, 8, Register8::A),
+                        0xC0 => self.set_r(cycle, 0, Register8::B),
+                        0xC1 => self.set_r(cycle, 0, Register8::C),
+                        0xC2 => self.set_r(cycle, 0, Register8::D),
+                        0xC3 => self.set_r(cycle, 0, Register8::E),
+                        0xC4 => self.set_r(cycle, 0, Register8::H),
+                        0xC5 => self.set_r(cycle, 0, Register8::L),
+                        0xC6 => self.seti_rr(cycle, memory, 0,  Register16::HL),
+                        0xC7 => self.set_r(cycle, 0, Register8::A),
+                        0xC8 => self.set_r(cycle, 1, Register8::B),
+                        0xC9 => self.set_r(cycle, 1, Register8::C),
+                        0xCA => self.set_r(cycle, 1, Register8::D),
+                        0xCB => self.set_r(cycle, 1, Register8::E),
+                        0xCC => self.set_r(cycle, 1, Register8::H),
+                        0xCD => self.set_r(cycle, 1, Register8::L),
+                        0xCE => self.seti_rr(cycle, memory, 1,  Register16::HL),
+                        0xCF => self.set_r(cycle, 1, Register8::A),
+                        0xD0 => self.set_r(cycle, 2, Register8::B),
+                        0xD1 => self.set_r(cycle, 2, Register8::C),
+                        0xD2 => self.set_r(cycle, 2, Register8::D),
+                        0xD3 => self.set_r(cycle, 2, Register8::E),
+                        0xD4 => self.set_r(cycle, 2, Register8::H),
+                        0xD5 => self.set_r(cycle, 2, Register8::L),
+                        0xD6 => self.seti_rr(cycle, memory, 2,  Register16::HL),
+                        0xD7 => self.set_r(cycle, 2, Register8::A),
+                        0xD8 => self.set_r(cycle, 3, Register8::B),
+                        0xD9 => self.set_r(cycle, 3, Register8::C),
+                        0xDA => self.set_r(cycle, 3, Register8::D),
+                        0xDB => self.set_r(cycle, 3, Register8::E),
+                        0xDC => self.set_r(cycle, 3, Register8::H),
+                        0xDD => self.set_r(cycle, 3, Register8::L),
+                        0xDE => self.seti_rr(cycle, memory, 3,  Register16::HL),
+                        0xDF => self.set_r(cycle, 3, Register8::A),
+                        0xE0 => self.set_r(cycle, 4, Register8::B),
+                        0xE1 => self.set_r(cycle, 4, Register8::C),
+                        0xE2 => self.set_r(cycle, 4, Register8::D),
+                        0xE3 => self.set_r(cycle, 4, Register8::E),
+                        0xE4 => self.set_r(cycle, 4, Register8::H),
+                        0xE5 => self.set_r(cycle, 4, Register8::L),
+                        0xE6 => self.seti_rr(cycle, memory, 4,  Register16::HL),
+                        0xE7 => self.set_r(cycle, 4, Register8::A),
+                        0xE8 => self.set_r(cycle, 5, Register8::B),
+                        0xE9 => self.set_r(cycle, 5, Register8::C),
+                        0xEA => self.set_r(cycle, 5, Register8::D),
+                        0xEB => self.set_r(cycle, 5, Register8::E),
+                        0xEC => self.set_r(cycle, 5, Register8::H),
+                        0xED => self.set_r(cycle, 5, Register8::L),
+                        0xEE => self.seti_rr(cycle, memory, 5,  Register16::HL),
+                        0xEF => self.set_r(cycle, 5, Register8::A),
+                        0xF0 => self.set_r(cycle, 6, Register8::B),
+                        0xF1 => self.set_r(cycle, 6, Register8::C),
+                        0xF2 => self.set_r(cycle, 6, Register8::D),
+                        0xF3 => self.set_r(cycle, 6, Register8::E),
+                        0xF4 => self.set_r(cycle, 6, Register8::H),
+                        0xF5 => self.set_r(cycle, 6, Register8::L),
+                        0xF6 => self.seti_rr(cycle, memory, 6,  Register16::HL),
+                        0xF7 => self.set_r(cycle, 6, Register8::A),
+                        0xF8 => self.set_r(cycle, 7, Register8::B),
+                        0xF9 => self.set_r(cycle, 7, Register8::C),
+                        0xFA => self.set_r(cycle, 7, Register8::D),
+                        0xFB => self.set_r(cycle, 7, Register8::E),
+                        0xFC => self.set_r(cycle, 7, Register8::H),
+                        0xFD => self.set_r(cycle, 7, Register8::L),
+                        0xFE => self.seti_rr(cycle, memory, 7,  Register16::HL),
+                        0xFF => self.set_r(cycle, 7, Register8::A),
+                        _ => panic!("Code reached unreachable state")
+                    }
                 }
             },
             _ => {},
@@ -402,7 +664,7 @@ impl CPU {
     /*
         Reads byte at PC+1 and returns as u8
      */
-    fn fetch_u8_immdiate(&self, memory: &mut Memory) -> u8 {
+    fn fetch_u8_immediate(&self, memory: &mut Memory) -> u8 {
         return memory.read(self.pc + 1);
     }
 
@@ -416,11 +678,6 @@ impl CPU {
         return d16;
     }
 
-    pub fn nop(&mut self, cycle: u32) {
-        if cycle == 4 {
-             self.instr_state = None;
-        }
-    }
 
     /*
         8-bit load/store/move
@@ -441,6 +698,7 @@ impl CPU {
             let val = self.fetch_u8_immdiate(memory);
             self.registers.set8(register, val);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -451,6 +709,7 @@ impl CPU {
             let val = memory.read(addr);
             self.registers.set8(register1, val);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -463,6 +722,7 @@ impl CPU {
            let res = addr.overflowing_add(1);
            self.registers.set16(register2, res.0);
            self.instr_state = None;
+           self.pc = self.pc + 1;
         }
     }
 
@@ -475,6 +735,7 @@ impl CPU {
             let res = addr.overflowing_sub(1);
             self.registers.set16(register2, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -491,6 +752,7 @@ impl CPU {
         } else if cycle == 16 {
             self.registers.set8(register, memory.read(*state.intermediate));
             self.instr_state = None;
+            self.pc = self.pc + 3;
         }
     }
 
@@ -507,6 +769,7 @@ impl CPU {
         } else if cycle == 16 {
             memory.write(*state.intermediate, self.registers.get8(register));
             self.instr_state = None;
+            self.pc = self.pc + 3;
         }
     }
 
@@ -517,6 +780,7 @@ impl CPU {
             let addr: u16 = 0xFF00 + offset as u16;
             memory.write(addr, self.registers.get8(register));
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -527,6 +791,7 @@ impl CPU {
             let addr: u16 = 0xFF00 + offset as u16;
             memory.write(addr, self.registers.get8(register));
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -538,6 +803,7 @@ impl CPU {
             let val = memory.read(addr);
             self.registers.set8(register, val);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -549,6 +815,7 @@ impl CPU {
             let val = memory.read(addr);
             self.registers.set8(register, val);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -559,6 +826,7 @@ impl CPU {
             let val = self.registers.get8(register2);
             memory.write(addr, val);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -571,6 +839,7 @@ impl CPU {
             let res = addr.overflowing_add(1);
             self.registers.set16(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -583,16 +852,18 @@ impl CPU {
             let res = addr.overflowing_sub(1);
             self.registers.set16(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
-    //sti (R), u8
+    //sti (RR), u8
     fn sti_rr_u8(&mut self, cycle: u32, memory: &mut Memory, register: Register16) {
         if cycle == 12 {
             let addr = self.registers.get16(register);
             let val = memory.read(self.pc + 1);
             memory.write(addr, val);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -601,6 +872,7 @@ impl CPU {
         if cycle == 4 {
             self.registers.set8(dst, self.registers.get8(src));
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -618,12 +890,11 @@ impl CPU {
     //ld RR, u16
     fn ld_rr_u16(&mut self, cycle: u32, memory: &mut Memory, rhigh: Register8, rlow: Register8) {
         if cycle == 8 {
-            self.registers.set8(rlow, memory.read(self.pc));
-            self.pc = self.pc + 1;
+            self.registers.set8(rlow, memory.read(self.pc + 1));
         } else if cycle == 12 {
-            self.registers.set8(rhigh, memory.read(self.pc));
-            self.pc = self.pc + 1;
+            self.registers.set8(rhigh, memory.read(self.pc + 2));
             self.instr_state = None;
+            self.pc = self.pc + 3;
         }
     }
 
@@ -637,17 +908,8 @@ impl CPU {
             self.sp = self.sp & 0x00FF;
             self.sp = self.sp + ((val as u16) << 8);
             self.instr_state = None;
+            self.pc = self.pc + 3;
         }
-    }
-
-    //st (u16), RR
-    fn lsm16_st(&mut self, cycle: u32, memory: &mut Memory, register: Register16) {
-        let mut addr= self.fetch_u16_immediate(memory);
-        let val = self.registers.get16(register);
-        let low = (val & 0x00FF) as u8;
-        let high = (val >> 8) as u8;
-        memory.write(addr, low);
-        memory.write(addr + 1, high);
     }
 
     //push RR
@@ -661,6 +923,7 @@ impl CPU {
             self.sp = self.sp - 1;
             memory.write(self.sp, val);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -674,12 +937,8 @@ impl CPU {
             self.registers.set8(rs.0,memory.read(self.sp));
             self.sp = self.sp + 1;
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
-    }
-
-    //mv RR1, RR2
-    fn lsm16_mv(&mut self, register1: Register16, register2: Register16) {
-        self.registers.set16(register1, self.registers.get16(register2));
     }
 
     //store SP
@@ -700,6 +959,7 @@ impl CPU {
             memory.write(*state.intermediate, (self.sp >> 8) as u8);
         } else if cycle == 20 {
             self.instr_state = None;
+            self.pc = self.pc + 3;
         }
     }
 
@@ -707,6 +967,7 @@ impl CPU {
         if cycle == 8 {
             self.sp = self.registers.get16(register);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -759,6 +1020,7 @@ impl CPU {
             self.registers.set8(register, res.0);
         } else if cycle == 4 {
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -772,6 +1034,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             memory.write(addr, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -786,6 +1049,7 @@ impl CPU {
             self.registers.set8(register, res.0);
         } else if cycle == 4 {
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -799,6 +1063,8 @@ impl CPU {
             self.registers.set_flag(Flags::N);
             memory.write(addr, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
+
         }
     }
 
@@ -814,6 +1080,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
     //add r, u8
@@ -828,6 +1095,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -844,6 +1112,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -859,6 +1128,7 @@ impl CPU {
             self.registers.set_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
     //add r, u8
@@ -873,6 +1143,7 @@ impl CPU {
             self.registers.set_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
     //add r, (rr)
@@ -888,6 +1159,7 @@ impl CPU {
             self.registers.set_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -910,6 +1182,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -932,6 +1205,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -955,6 +1229,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -977,6 +1252,7 @@ impl CPU {
             self.registers.set_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -999,6 +1275,7 @@ impl CPU {
             self.registers.set_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -1022,6 +1299,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1037,6 +1315,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1052,6 +1331,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -1068,6 +1348,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1083,6 +1364,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1098,6 +1380,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -1114,6 +1397,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1129,6 +1413,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1144,6 +1429,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -1160,6 +1446,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.set8(register1, res.0);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1174,6 +1461,7 @@ impl CPU {
             if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
             self.registers.set_flag(Flags::N);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
     //add r, u8
@@ -1187,6 +1475,7 @@ impl CPU {
             if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
             self.registers.set_flag(Flags::N);
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
     //add r, (rr)
@@ -1201,6 +1490,7 @@ impl CPU {
             if (v1 & 0xF) - (v2 & 0xF) > 0xF { self.registers.set_flag(Flags::H) } else { self.registers.unset_flag(Flags::H) }
             self.registers.set_flag(Flags::N);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1219,6 +1509,7 @@ impl CPU {
             if self.registers.get8(Register8::A) == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
             self.registers.unset_flag(Flags::H);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1227,6 +1518,7 @@ impl CPU {
             let val = self.registers.get8(Register8::A);
             self.registers.set8(Register8::A, val ^ 0xFF)
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1236,6 +1528,7 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.unset_flag(Flags::H);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1247,6 +1540,7 @@ impl CPU {
                 self.registers.set_flag(Flags::C);
             }
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1266,32 +1560,42 @@ impl CPU {
             self.registers.unset_flag(Flags::Z);
             self.registers.unset_flag(Flags::N);
             self.registers.unset_flag(Flags::H);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
     //Left circular shift arbitrary 8-bit register
-    fn rsb8_rlc(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let high = (val & 0xA0) >> 7;
-        let res = (val << 1) + high;
-        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
-        self.registers.set8(register, res);
+    fn rlc_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 8 {
+            let val = self.registers.get8(register);
+            let high = (val & 0xA0) >> 7;
+            let res = (val << 1) + high;
+            if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            self.registers.set8(register, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Left circular shift value stored in memory pointed to by RR
-    fn rsb8_rlci(&mut self, pair: Register16) {
-        let addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let high = (val & 0xA0) >> 7;
-        let res = (val << 1) + high;
-        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
-        memory.write(addr, res);
+    fn rlci_rr(&mut self, cycle: u32, pair: Register16) {
+        if  cycle == 16 {
+            let addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let high = (val & 0xA0) >> 7;
+            let res = (val << 1) + high;
+            if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Left shift register A through carry
@@ -1306,34 +1610,44 @@ impl CPU {
             self.registers.unset_flag(Flags::Z);
             self.registers.unset_flag(Flags::N);
             self.registers.unset_flag(Flags::H);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
     //Left shift arbitrary 8-bit register through carry
-    fn rsb8_rl(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let high = (val & 0xA0) >> 7;
-        let new_low = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
-        let res = (val << 1) + new_low;
-        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        self.registers.set8(register, res);
-        if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
+    fn rl_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 8 {
+            let val = self.registers.get8(register);
+            let high = (val & 0xA0) >> 7;
+            let new_low = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+            let res = (val << 1) + new_low;
+            if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            self.registers.set8(register, res);
+            if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Left shift value stored in memory pointed to by RR through carry
-    fn rsb8_rli(&mut self, pair: Register16) {
-        let addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let high = (val & 0xA0) >> 7;
-        let new_low = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
-        let res = (val << 1) + new_low;
-        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
-        memory.write(addr, res);
+    fn rli_rr(&mut self, cycle: u32, pair: Register16) {
+        if cycle == 16 {
+            let addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let high = (val & 0xA0) >> 7;
+            let new_low = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+            let res = (val << 1) + new_low;
+            if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Right circular shift register A
@@ -1347,32 +1661,42 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.unset_flag(Flags::H);
             self.registers.set8(Register8::A, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
     //Right circular shift arbitrary 8-bit register
-    fn rsb8_rrc(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let low = val & 0x01;
-        let res = (val >> 1) + (low << 7);
-        if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
-        self.registers.set8(Register8::A, res;
+    fn rrc_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 8 {
+            let val = self.registers.get8(register);
+            let low = val & 0x01;
+            let res = (val >> 1) + (low << 7);
+            if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            self.registers.set8(Register8::A, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Right circular shift value stored in memory pointed to by RR
-    fn rsb8_rrci(&mut self, pair: Register16) {
-        let addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let low = val & 0x01;
-        let res = (val >> 1) + (low << 7);
-        if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
-        memory.write(addr, res);
+    fn rrci_rr(&mut self, cycle: u32, pair: Register16) {
+        if cycle == 16 {
+            let addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let low = val & 0x01;
+            let res = (val >> 1) + (low << 7);
+            if low { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if res == 0 { self.registers.set_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Left shift register A through carry
@@ -1387,177 +1711,243 @@ impl CPU {
             self.registers.unset_flag(Flags::Z);
             self.registers.unset_flag(Flags::N);
             self.registers.unset_flag(Flags::H);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
     //Left shift arbitrary 8-bit register through carry
-    fn rsb8_rr(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let low = val & 0x0F;
-        let new_high = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
-        let res = (val >> 1) + (new_high << 7);
-        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        self.registers.set8(register, res);
-        if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
+    fn rr_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 8 {
+            let val = self.registers.get8(register);
+            let low = val & 0x0F;
+            let new_high = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+            let res = (val >> 1) + (new_high << 7);
+            if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            self.registers.set8(register, res);
+            if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Left shift value stored in memory pointed to by RR through carry
-    fn rsb8_rri(&mut self, pair: Register16) {
-        let addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let low = val & 0x0F;
-        let new_high = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
-        let res = (val >> 1) + (new_high << 7);
-        if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.unset_flag(Flags::H);
-        memory.write(addr, res);
+    fn rri_rr(&mut self, cycle: u32, pair: Register16) {
+        if cycle == 16 {
+            let addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let low = val & 0x0F;
+            let new_high = if self.registers.get_flag(Flags::C) { 1 } else { 0 };
+            let res = (val >> 1) + (new_high << 7);
+            if high { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            if res == 0 { self.registers.unset_flag(Flags::Z) } else { self.registers.unset_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.unset_flag(Flags::H);
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Arithmetic shift left R
-    fn rsb8_sla(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let carry = (val & 0xA0) >> 7;
-        let low = val & 0x1;
-        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let mut res = val << 1;
-        if low == 1 { res = res | 0x1 } else { res = res & 0xF8 }
-        self.registers.set8(register, res);
+    fn sla_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 8 {
+            let val = self.registers.get8(register);
+            let carry = (val & 0xA0) >> 7;
+            let low = val & 0x1;
+            if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            let mut res = val << 1;
+            if low == 1 { res = res | 0x1 } else { res = res & 0xF8 }
+            self.registers.set8(register, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Arithmetic shift left (RR)
-    fn rsb8_slai(&mut self, memory: &mut Memory, pair: Register16) {
-        let addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let carry = (val & 0xA0) >> 7;
-        let low = val & 0x1;
-        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let mut res = val << 1;
-        if low == 1 { res = res | 0x1 } else { res = res & 0xF8 }
-        memory.write(addr, res);
+    fn slai_rr(&mut self, cycle: u32, memory: &mut Memory, pair: Register16) {
+        if cycle == 16 {
+            let addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let carry = (val & 0xA0) >> 7;
+            let low = val & 0x1;
+            if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            let mut res = val << 1;
+            if low == 1 { res = res | 0x1 } else { res = res & 0xF8 }
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Arithmetic shift right R
-    fn rsb8_sra(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let carry = val & 0x01;
-        let high = val & 0xA0;
-        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let mut res = val >> 1;
-        if high == 0xA0 { res = res | 0xA0 } else { res = res & 0x7F }
-        self.registers.set8(register, res);
+    fn sra_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 8 {
+            let val = self.registers.get8(register);
+            let carry = val & 0x01;
+            let high = val & 0xA0;
+            if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            let mut res = val >> 1;
+            if high == 0xA0 { res = res | 0xA0 } else { res = res & 0x7F }
+            self.registers.set8(register, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Arithmetic shift right (RR)
-    fn rsb8_srai(&mut self, memory: &mut Memory, pair: Register16) {
-        let addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let carry = val & 0x01;
-        let high = val & 0xA0;
-        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let mut res = val >> 1;
-        if high == 0xA0 { res = res | 0xA0 } else { res = res & 0x7F }
-        memory.write(addr, res);
+    fn srai_rr(&mut self, cycle: u32, memory: &mut Memory, pair: Register16) {
+        if cycle == 16 {
+            let addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let carry = val & 0x01;
+            let high = val & 0xA0;
+            if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            let mut res = val >> 1;
+            if high == 0xA0 { res = res | 0xA0 } else { res = res & 0x7F }
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Swap the upper 4 bits in R with the lower four
-    fn rsb8_swap(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let low = (val & 0xF0) >> 4;
-        let high = (val & 0x0F) << 4;
-        let res = high + low;
-        self.registers.set8(register, res);
+    fn swap_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 8 {
+            let val = self.registers.get8(register);
+            let low = (val & 0xF0) >> 4;
+            let high = (val & 0x0F) << 4;
+            let res = high + low;
+            self.registers.set8(register, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Swap the upper 4 bits in (RR) with the lower four
-    fn rsb8_swapi(&mut self, memory: &mut Memory, pair: Register16) {
-        let addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let low = (val & 0xF0) >> 4;
-        let high = (val & 0x0F) << 4;
-        let res = high + low;
-        memory.write(addr, res);
+    fn swapi_rr(&mut self, cycle: u32, memory: &mut Memory, pair: Register16) {
+        if cycle == 16 {
+            let addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let low = (val & 0xF0) >> 4;
+            let high = (val & 0x0F) << 4;
+            let res = high + low;
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Logical shift right R
-    fn rsb8_srl(&mut self, register: Register8) {
-        let val = self.registers.get8(register);
-        let carry = val & 0x01;
-        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let mut res = val >> 1;
-        self.registers.set8(register, res);
+    fn srl_r(&mut self, cycle: u32, register: Register8) {
+        if cycle == 8 {
+            let val = self.registers.get8(register);
+            let carry = val & 0x01;
+            if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            let mut res = val >> 1;
+            self.registers.set8(register, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Logical shift right (RR)
-    fn rsb8_srli(&mut self, memory: &mut Memory, pair: Register16) {
-        let addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let carry = val & 0x01;
-        if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
-        let mut res = val >> 1;
-        memory.write(addr, res);
+    fn srli_rr(&mut self, cycle: u32, memory: &mut Memory, pair: Register16) {
+        if cycle == 16 {
+            let addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let carry = val & 0x01;
+            if carry == 1 { self.registers.set_flag(Flags::C) } else { self.registers.unset_flag(Flags::C) }
+            let mut res = val >> 1;
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Test u3 in R, set Z if bit not set
-    fn rsb8_bit(&mut self, bit: u8, register: Register8) {
-        if bit > 7 { return }
-        let val = self.registers.get8(register);
-        let set = (val >> bit) & 0x1;
-        if set { self.registers.unset_flag(Flags::Z) } else { self.registers.set_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set_flag(Flags::H);
+    fn bit_r(&mut self, cycle: u32, bit: u8, register: Register8) {
+        if cycle == 8 {
+            if bit > 7 { return }
+            let val = self.registers.get8(register);
+            let set = (val >> bit) & 0x1;
+            if set { self.registers.unset_flag(Flags::Z) } else { self.registers.set_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set_flag(Flags::H);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Test u3 in (RR), set Z if bit not set
-    fn rsb8_biti(&mut self, memory: &mut Memory, bit: u8, pair: Register16) {
-        if bit > 7 { return }
-        let addr = self.registers.get16(pair);
-        let val = memory.read(addr);
-        let set = (val >> bit) & 0x1;
-        if set { self.registers.unset_flag(Flags::Z) } else { self.registers.set_flag(Flags::Z) }
-        self.registers.unset_flag(Flags::N);
-        self.registers.set_flag(Flags::H);
+    fn biti_rr(&mut self, cycle: u32, memory: &mut Memory, bit: u8, pair: Register16) {
+        if cycle == 12 {
+            if bit > 7 { return }
+            let addr = self.registers.get16(pair);
+            let val = memory.read(addr);
+            let set = (val >> bit) & 0x1;
+            if set { self.registers.unset_flag(Flags::Z) } else { self.registers.set_flag(Flags::Z) }
+            self.registers.unset_flag(Flags::N);
+            self.registers.set_flag(Flags::H);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Set bit position in R to 0
-    fn rsb8_res(&mut self, bit: u8, register: Register8) {
-        if bit > 7 { return }
-        let mut mask = 0xFF ^ (0x1 << bit);
-        let val = self.registers.get8(register);
-        let res = val & mask;
-        self.registers.set8(register, res);
+    fn res_r(&mut self, cycle: u32, bit: u8, register: Register8) {
+        if cycle == 8 {
+            if bit > 7 { return }
+            let mut mask = 0xFF ^ (0x1 << bit);
+            let val = self.registers.get8(register);
+            let res = val & mask;
+            self.registers.set8(register, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Set bit position in (RR) to 0
-    fn rsb8_resi(&mut self, memory: &mut Memory, bit: u8, pair: Register16) {
-        if bit > 7 { return }
-        let addr = self.registers.get16(pair);
-        let mut mask = 0xFF ^ (0x1 << bit);
-        let val = memory.read(addr);
-        let res = val & mask;
-        memory.write(addr, res);
+    fn resi_rr(&mut self, cycle: u32, memory: &mut Memory, bit: u8, pair: Register16) {
+        if cycle == 16 {
+            if bit > 7 { return }
+            let addr = self.registers.get16(pair);
+            let mut mask = 0xFF ^ (0x1 << bit);
+            let val = memory.read(addr);
+            let res = val & mask;
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Set bit position in R to 1
-    fn rsb8_set(&mut self, bit: u8, register: Register8) {
-        if bit > 7 { return }
-        let mut mask = 0x1 << bit;
-        let val = self.registers.get8(register);
-        let res = val | mask;
-        self.registers.set8(register, res);
+    fn set_r(&mut self, cycle: u32, bit: u8, register: Register8) {
+        if cycle == 8 {
+            if bit > 7 { return }
+            let mut mask = 0x1 << bit;
+            let val = self.registers.get8(register);
+            let res = val | mask;
+            self.registers.set8(register, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
     //Set bit position in  to 1
-    fn rsb8_seti(&mut self, memory: &mut Memory, bit: u8, pair: Register16) {
-        if bit > 7 { return }
-        let addr = self.registers.get16(pair);
-        let mut mask = 0x1 << bit;
-        let val = memory.read(addr);
-        let res = val | mask;
-        memory.write(addr, res);
+    fn seti_rr(&mut self, cycle: u32, memory: &mut Memory, bit: u8, pair: Register16) {
+        if cycle == 16 {
+            if bit > 7 { return }
+            let addr = self.registers.get16(pair);
+            let mut mask = 0x1 << bit;
+            let val = memory.read(addr);
+            let res = val | mask;
+            memory.write(addr, res);
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
     }
 
 
@@ -1586,6 +1976,7 @@ impl CPU {
         } else if cycle == 8 {
             self.registers.set8(rs.0, (*state.intermediate >> 8) as u8);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1603,12 +1994,8 @@ impl CPU {
         } else if cycle == 8 {
             self.sp = *state.intermediate;
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
-    }
-
-    fn alu16_incsp(&mut self) {
-        let res = self.sp.overflowing_add(1);
-        self.sp = res.0;
     }
 
     fn dec_rr(&mut self, cycle: u32, register: Register16) {
@@ -1625,6 +2012,7 @@ impl CPU {
         } else if cycle == 8 {
             self.registers.set8(rs.0, (*state.intermediate >> 8) as u8);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1642,12 +2030,8 @@ impl CPU {
         } else if cycle == 8 {
             self.sp = *state.intermediate;
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
-    }
-
-    fn alu16_decsp(&mut self) {
-        let res = self.sp.overflowing_sub(1);
-        self.sp = res.0;
     }
 
     fn add_rr_rr(&mut self, cycle: u32, pair1: Register16, pair2: Register16) {
@@ -1661,6 +2045,7 @@ impl CPU {
             self.registers.set16(pair1, res.0);
         } else if cycle == 8 {
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1681,6 +2066,7 @@ impl CPU {
         }  else if cycle == 8 {
             self.registers.set8(rs.0, (*state.intermediate >> 8) as u8);
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
@@ -1693,6 +2079,8 @@ impl CPU {
         self.registers.unset_flag(Flags::N);
         self.registers.unset_flag(Flags::Z);
         self.sp = res.0;
+        self.instr_state = None;
+        self.pc = self.pc + 2;
     }
 
     //LD HL,SP+i8
@@ -1706,12 +2094,22 @@ impl CPU {
             self.registers.unset_flag(Flags::N);
             self.registers.unset_flag(Flags::Z);
             self.registers.set16(register, res.0);
+            self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
     /*
         CPU Control / Misc
     */
+
+    fn nop(&mut self, cycle: u32) {
+        if cycle == 4 {
+            self.instr_state = None;
+            self.pc = self.pc + 1;
+        }
+    }
+
     fn ret(&mut self, cycle: u32, memory: &mut Memory, conditions: Vec<Flags>) {
         let mut state = match &self.instr_state {
             Some(x) => x,
@@ -1737,11 +2135,12 @@ impl CPU {
 
     fn rst(&mut self, cycle: u32, memory: &mut Memory, vec: u16) {
         if cycle == 12 {
+            self.pc = self.pc + 1;
             self.sp = self.sp - 1;
-            memory.write(self.sp, ((self.pc + 4) >> 8) as u8);
+            memory.write(self.sp, ((self.pc) >> 8) as u8);
         } else if cycle == 16 {
             self.sp = self.sp - 1;
-            memory.write(self.sp - 1, ((self.pc + 3) & 0xFF) as u8);
+            memory.write(self.sp - 1, ((self.pc) & 0xFF) as u8);
             self.pc = vec;
             self.instr_state = None;
         }
@@ -1756,7 +2155,7 @@ impl CPU {
             *state.intermediate = memory.read(self.pc + 1);
         } else if cycle == 12 {
             *state.intermediate  = *state.intermediate + ((memory.read(self.pc + 2) as u16) << 8);
-            self.pc = self.pc + 2;
+            self.pc = self.pc + 3;
             let mut jump = true;
             for condition in conditions {
                 if !self.registers.get_flag(condition) { jump = false }
@@ -1764,11 +2163,12 @@ impl CPU {
             if !jump { self.instr_state = None; }
         } else if cycle == 16 {
             self.sp = self.sp -1 ;
-            memory.write(self.sp, ((self.pc + 4) >> 8) as u8);
+            memory.write(self.sp, ((self.pc) >> 8) as u8);
         } else if cycle == 20 {
             self.sp = self.sp - 1;
-            memory.write(self.sp - 1, ((self.pc + 3) & 0xFF) as u8);
+            memory.write(self.sp - 1, ((self.pc) & 0xFF) as u8);
         } else if cycle == 24 {
+            self.pc = *state.intermediate;
             self.instr_state = None;
         }
     }
@@ -1781,12 +2181,12 @@ impl CPU {
             }
             if !jump { self.instr_state = None; }
         } else if cycle == 12 {
-            //let e8 = self.fetch_u8_immdiate(memory) as i8;
             let e8 = memory.read(self.pc + 1) as i8;
             let val = e8.abs() as u8;
             let res = if e8 >= 0 { self.pc.overflowing_add(val as u16) } else { self.pc.overflowing_sub(val as u16) };
             self.pc = res.0;
             self.instr_state = None;
+            self.pc = self.pc + 2;
         }
     }
 
@@ -1822,12 +2222,14 @@ impl CPU {
         if cycle == 4 {
             self.interrupts.reset_ime();
             self.instr_state = None;
+            self.pc + self.pc + 1;
         }
     }
 
     fn ei(&mut self, cycle: u32) {
         if cycle == 4 {
             self.interrupts.ei();
+            self.pc + self.pc + 1;
         }
     }
 
@@ -1846,14 +2248,18 @@ impl CPU {
             self.interrupts.set_ime();
             self.pc = *state.intermediate;
             self.instr_state = None;
+            self.pc = self.pc + 1;
         }
     }
 
     fn prefix(&mut self, cycle: u32) {
-        let mut state = match &self.instr_state {
-            Some(x) => x,
-            None => panic!("Invalid state"),
-        };
-        *state.prefix = true;
+        if cycle == 4 {
+            let mut state = match &self.instr_state {
+                Some(x) => x,
+                None => panic!("Invalid state"),
+            };
+            *state.prefix = true;
+            self.pc = self.pc + 1;
+        }
     }
 }
